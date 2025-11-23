@@ -3,17 +3,17 @@ import React from 'react';
 import { render, Box, Text } from 'ink';
 import readline from 'readline';
 
-// Get teacher IP from command line
-const teacherIP = process.argv[2];
+// Get educator IP from command line
+const educatorIP = process.argv[2];
 
-if (!teacherIP) {
-  console.error('Usage: node client.js <teacher-ip>');
+if (!educatorIP) {
+  console.error('Usage: node client.js <educator-ip>');
   console.error('Example: node client.js 192.168.1.100');
   process.exit(1);
 }
 
 const PORT = 8080;
-const wsUrl = `ws://${teacherIP}:${PORT}`;
+const wsUrl = `ws://${educatorIP}:${PORT}`;
 
 let ws = null;
 let messageList = [];
@@ -26,10 +26,10 @@ function addMessage(text, type = 'info') {
   const timestamp = new Date().toLocaleTimeString();
   let prefix = '';
   
-  if (type === 'teacher') {
-    prefix = 'Teacher';
+  if (type === 'educator') {
+    prefix = 'Educator';
   } else if (type === 'you') {
-    prefix = 'You';
+    prefix = 'Learner';
   } else if (type === 'system') {
     prefix = 'System';
   }
@@ -65,7 +65,7 @@ function App() {
   return React.createElement(Box, { flexDirection: 'column' },
     React.createElement(Box, { backgroundColor: 'green', paddingX: 1, paddingY: 0 },
       React.createElement(Text, { color: 'white', bold: true },
-        `Connected to: ${teacherIP}:${PORT} | Status: ${status}`
+        `Sahayak - Learner Mode | Connected to: ${educatorIP}:${PORT} | Status: ${status}`
       )
     ),
     React.createElement(Box, { flexDirection: 'column', height: 20, borderStyle: 'single', paddingX: 1 },
@@ -91,14 +91,14 @@ const rl = readline.createInterface({
 // Connect to WebSocket server
 function connect() {
   updateStatus('Connecting...');
-  addMessage(`Connecting to ${teacherIP}:${PORT}...`, 'system');
+  addMessage(`Connecting to educator at ${educatorIP}:${PORT}...`, 'system');
 
   try {
     ws = new WebSocket(wsUrl);
 
     ws.on('open', () => {
       updateStatus('Connected');
-      addMessage('Connected to teacher!', 'system');
+      addMessage('Connected to educator!', 'system');
       rl.prompt();
     });
 
@@ -106,23 +106,23 @@ function connect() {
       try {
         const message = JSON.parse(data.toString());
         if (message.type === 'message') {
-          addMessage(message.data, 'teacher');
+          addMessage(message.data, 'educator');
         } else if (message.type === 'quiz') {
           // For now, just show quiz as message - will implement quiz UI later
-          addMessage(`Quiz: ${message.data.question}`, 'teacher');
+          addMessage(`Quiz: ${message.data.question}`, 'educator');
           message.data.options.forEach((opt, i) => {
-            addMessage(`  ${String.fromCharCode(65 + i)}. ${opt}`, 'teacher');
+            addMessage(`  ${String.fromCharCode(65 + i)}. ${opt}`, 'educator');
           });
         }
       } catch (e) {
         // Legacy: plain text message
-        addMessage(data.toString(), 'teacher');
+        addMessage(data.toString(), 'educator');
       }
     });
 
     ws.on('close', () => {
       updateStatus('Disconnected');
-      addMessage('Disconnected from teacher', 'system');
+      addMessage('Disconnected from educator', 'system');
     });
 
     ws.on('error', (error) => {
@@ -144,7 +144,7 @@ rl.on('line', (line) => {
       ws.send(JSON.stringify({ type: 'message', data: message }));
       addMessage(message, 'you');
     } else {
-      addMessage('Not connected to teacher', 'system');
+      addMessage('Not connected to educator', 'system');
     }
   }
   

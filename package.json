@@ -1,7 +1,7 @@
 {
-  "name": "berry-sahayak",
+  "name": "sahayak",
   "version": "1.0.0",
-  "description": "Simple WebSocket communication between devices",
+  "description": "Sahayak - Terminal-based educational communication platform for educators and learners",
   "type": "module",
   "main": "server.js",
   "scripts": {

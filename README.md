@@ -1,6 +1,6 @@
-# berry-sahayak
+# Sahayak
 
-Simple WebSocket communication between devices on the same local network.
+Sahayak is a terminal-based educational communication platform that enables real-time interaction between educators and learners on the same local network.
 
 ## Setup
 
@@ -9,7 +9,7 @@ Simple WebSocket communication between devices on the same local network.
 npm install
 ```
 
-2. Start the server on your MacBook:
+2. Start the educator server:
 ```bash
 npm start
 ```
@@ -18,46 +18,31 @@ The server will display your local IP address and port.
 
 ## Usage
 
-### Terminal Client (Recommended)
+## Usage
 
-1. **Start the server (Teacher):**
+1. **Start the educator server:**
    ```bash
    npm start
    ```
    The server will display your local IP address (e.g., `192.168.1.100`).
 
-2. **Connect as student:**
+2. **Connect as learner:**
    ```bash
-   node client.js [TEACHER_IP]
+   node client.js [EDUCATOR_IP]
    # Example: node client.js 192.168.1.100
    ```
    Or use the npm script:
    ```bash
-   npm run client [TEACHER_IP]
+   npm run client [EDUCATOR_IP]
    ```
 
 3. **Start messaging:**
-   - Teacher: Type messages in terminal and press Enter
-   - Student: Type messages in terminal and press Enter
-   - Use `/quiz [topic]` command on teacher side to generate quizzes
-
-### Web Browser Client (Alternative)
-
-1. On your mobile device (connected to the same Wi-Fi network), open a browser and go to:
-   ```
-   http://[YOUR_MACBOOK_IP]:8080/client.html
-   ```
-   Replace `[YOUR_MACBOOK_IP]` with the IP shown in the terminal.
-
-2. Enter the MacBook's IP address in the input field and click "Connect".
-
-3. Start messaging:
-   - On MacBook: Type messages in the terminal and press Enter
-   - On Mobile: Type messages in the input field and press Send
+   - Educator: Type messages in terminal and press Enter
+   - Learner: Type messages in terminal and press Enter
+   - Use `/quiz [topic]` command on educator side to generate quizzes
 
 ## Files
 
-- `server.js` - WebSocket server with terminal interface (Teacher)
-- `client.js` - Terminal client interface (Student)
-- `client.html` - Simple HTML client for mobile browser (Alternative)
+- `server.js` - WebSocket server with terminal interface (Educator)
+- `client.js` - Terminal client interface (Learner)
 - `package.json` - Project dependencies

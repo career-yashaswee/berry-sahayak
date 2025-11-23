@@ -61,10 +61,10 @@ function addMessage(text, type = 'info') {
   const timestamp = new Date().toLocaleTimeString();
   let prefix = '';
   
-  if (type === 'mobile') {
-    prefix = 'Mobile';
+  if (type === 'learner') {
+    prefix = 'Learner';
   } else if (type === 'you') {
-    prefix = 'You';
+    prefix = 'Educator';
   } else if (type === 'system') {
     prefix = 'System';
   }
@@ -196,7 +196,7 @@ function App() {
   return React.createElement(Box, { flexDirection: 'column' },
     React.createElement(Box, { backgroundColor: 'blue', paddingX: 1, paddingY: 0 },
       React.createElement(Text, { color: 'white', bold: true },
-        `Server: ${localIP}:${PORT} | Status: ${status}`
+        `Sahayak - Educator Mode | Server: ${localIP}:${PORT} | Status: ${status}`
       )
     ),
     React.createElement(Box, { flexDirection: 'column', height: 20, borderStyle: 'single', paddingX: 1 },
@@ -234,7 +234,7 @@ rl.on('line', async (line) => {
       }
       
       if (!client || client.readyState !== WebSocket.OPEN) {
-        addMessage('No client connected', 'system');
+        addMessage('No learner connected', 'system');
         rl.prompt();
         return;
       }
@@ -254,7 +254,7 @@ rl.on('line', async (line) => {
         client.send(JSON.stringify({ type: 'message', data: message }));
         addMessage(message, 'you');
       } else {
-        addMessage('No client connected', 'system');
+        addMessage('No learner connected', 'system');
       }
     }
   }
@@ -277,29 +277,29 @@ rl.on('SIGINT', () => {
 // Start HTTP server
 server.listen(PORT, () => {
   updateStatus('Waiting for connection...');
-  addMessage(`Connect from mobile: http://${localIP}:${PORT}/client.html`, 'system');
+  addMessage(`Sahayak - Educator Mode | Waiting for learner connection...`, 'system');
 });
 
 wss.on('connection', (ws) => {
   client = ws;
   updateStatus('Connected');
-  addMessage('Client connected', 'system');
+  addMessage('Learner connected', 'system');
   
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message.toString());
       if (data.type === 'message') {
-        addMessage(data.data, 'mobile');
+        addMessage(data.data, 'learner');
       }
     } catch (e) {
       const text = message.toString();
-      addMessage(text, 'mobile');
+      addMessage(text, 'learner');
     }
   });
   
   ws.on('close', () => {
     updateStatus('Disconnected');
-    addMessage('Client disconnected', 'system');
+    addMessage('Learner disconnected', 'system');
     client = null;
   });
   
