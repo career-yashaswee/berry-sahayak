@@ -18,8 +18,10 @@ const wsUrl = `ws://${educatorIP}:${PORT}`;
 let ws = null;
 let messageList = [];
 let status = 'Connecting...';
+let currentQuiz = null;
 let addMessageCallback = null;
 let updateStatusCallback = null;
+let updateQuizCallback = null;
 
 // Function to add message to display
 function addMessage(text, type = 'info') {
@@ -49,6 +51,70 @@ function updateStatus(newStatus) {
   }
 }
 
+// Set current quiz
+function setQuiz(quiz) {
+  currentQuiz = quiz;
+  if (updateQuizCallback) {
+    updateQuizCallback();
+  }
+}
+
+// Clear quiz
+function clearQuiz() {
+  currentQuiz = null;
+  if (updateQuizCallback) {
+    updateQuizCallback();
+  }
+}
+
+// Quiz Component
+function QuizDisplay({ quiz }) {
+  if (!quiz) return null;
+
+  return React.createElement(Box, {
+    borderStyle: 'round',
+    borderColor: 'cyan',
+    paddingX: 2,
+    paddingY: 1,
+    marginY: 1,
+    backgroundColor: 'black'
+  },
+    React.createElement(Box, { marginBottom: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true },
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+      )
+    ),
+    React.createElement(Box, { marginBottom: 1 },
+      React.createElement(Text, { color: 'yellow', bold: true },
+        `📝 QUIZ: ${quiz.question}`
+      )
+    ),
+    React.createElement(Box, { marginBottom: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true },
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+      )
+    ),
+    quiz.options.map((option, i) => {
+      const letter = String.fromCharCode(65 + i);
+      return React.createElement(Box, { key: i, marginY: 0.5 },
+        React.createElement(Text, { color: 'white' },
+          `${letter}. ${option}`
+        )
+      );
+    }),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { color: 'green', bold: true },
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+      )
+    ),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { color: 'yellow' },
+        'Type A, B, C, or D to answer'
+      )
+    )
+  );
+}
+
 // React App Component
 function App() {
   const [, forceUpdate] = React.useReducer(x => x + 1, 0);
@@ -56,9 +122,11 @@ function App() {
   React.useEffect(() => {
     addMessageCallback = () => forceUpdate();
     updateStatusCallback = () => forceUpdate();
+    updateQuizCallback = () => forceUpdate();
     return () => {
       addMessageCallback = null;
       updateStatusCallback = null;
+      updateQuizCallback = null;
     };
   }, []);
 
@@ -68,14 +136,15 @@ function App() {
         `Sahayak - Learner Mode | Connected to: ${educatorIP}:${PORT} | Status: ${status}`
       )
     ),
-    React.createElement(Box, { flexDirection: 'column', height: 20, borderStyle: 'single', paddingX: 1 },
+    React.createElement(Box, { flexDirection: 'column', height: currentQuiz ? 15 : 20, borderStyle: 'single', paddingX: 1 },
       messageList.slice(-20).map((msg, i) =>
         React.createElement(Text, { key: i }, msg)
       )
     ),
+    currentQuiz ? React.createElement(QuizDisplay, { quiz: currentQuiz }) : null,
     React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { color: 'yellow' },
-        'Type your message and press Enter to send'
+      React.createElement(Text, { color: currentQuiz ? 'cyan' : 'yellow' },
+        currentQuiz ? 'Type A, B, C, or D to answer the quiz' : 'Type your message and press Enter to send'
       )
     )
   );
@@ -108,11 +177,9 @@ function connect() {
         if (message.type === 'message') {
           addMessage(message.data, 'educator');
         } else if (message.type === 'quiz') {
-          // For now, just show quiz as message - will implement quiz UI later
-          addMessage(`Quiz: ${message.data.question}`, 'educator');
-          message.data.options.forEach((opt, i) => {
-            addMessage(`  ${String.fromCharCode(65 + i)}. ${opt}`, 'educator');
-          });
+          // Display quiz in special component
+          setQuiz(message.data);
+          addMessage('New quiz received!', 'system');
         }
       } catch (e) {
         // Legacy: plain text message
@@ -137,12 +204,43 @@ function connect() {
 
 // Handle input submission
 rl.on('line', (line) => {
-  const message = line.trim();
+  const input = line.trim().toUpperCase();
   
-  if (message) {
+  if (!input) {
+    rl.prompt();
+    return;
+  }
+
+  // Check if there's an active quiz and user is answering
+  if (currentQuiz && (input === 'A' || input === 'B' || input === 'C' || input === 'D')) {
+    const answerIndex = input.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
+    const selectedOption = currentQuiz.options[answerIndex];
+    
+    // Send answer to educator
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'message', data: message }));
-      addMessage(message, 'you');
+      ws.send(JSON.stringify({
+        type: 'quiz_answer',
+        data: {
+          question: currentQuiz.question,
+          answer: input,
+          answerIndex: answerIndex,
+          selectedOption: selectedOption
+        }
+      }));
+      
+      addMessage(`Answered: ${input}. ${selectedOption}`, 'you');
+      clearQuiz();
+    } else {
+      addMessage('Not connected to educator', 'system');
+    }
+  } else if (currentQuiz && input !== 'A' && input !== 'B' && input !== 'C' && input !== 'D') {
+    // User typed something else while quiz is active
+    addMessage('Please answer the quiz first (A, B, C, or D)', 'system');
+  } else {
+    // Regular message
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'message', data: input }));
+      addMessage(input, 'you');
     } else {
       addMessage('Not connected to educator', 'system');
     }

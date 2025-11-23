@@ -290,6 +290,9 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(message.toString());
       if (data.type === 'message') {
         addMessage(data.data, 'learner');
+      } else if (data.type === 'quiz_answer') {
+        const answer = data.data;
+        addMessage(`Quiz Answer: ${answer.answer}. ${answer.selectedOption}`, 'learner');
       }
     } catch (e) {
       const text = message.toString();
