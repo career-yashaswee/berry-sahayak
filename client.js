@@ -2,6 +2,7 @@ import { WebSocket } from 'ws';
 import React from 'react';
 import { render, Box, Text } from 'ink';
 import readline from 'readline';
+import { OLLAMA_MODELS } from './constants.js';
 
 // Get educator IP from command line
 const educatorIP = process.argv[2];
@@ -23,21 +24,33 @@ let addMessageCallback = null;
 let updateStatusCallback = null;
 let updateQuizCallback = null;
 
+// Function to get relative time
+function getRelativeTime(timestamp) {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (seconds < 60) {
+    return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
+  } else if (minutes < 60) {
+    return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+  } else if (hours < 24) {
+    return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  } else {
+    return new Date(timestamp).toLocaleTimeString();
+  }
+}
+
 // Function to add message to display
 function addMessage(text, type = 'info') {
-  const timestamp = new Date().toLocaleTimeString();
-  let prefix = '';
-  
-  if (type === 'educator') {
-    prefix = 'Educator';
-  } else if (type === 'you') {
-    prefix = 'Learner';
-  } else if (type === 'system') {
-    prefix = 'System';
-  }
-  
-  const message = `[${timestamp}] ${prefix}: ${text}`;
-  messageList.push(message);
+  const timestamp = Date.now();
+  messageList.push({
+    text: text,
+    type: type,
+    timestamp: timestamp
+  });
   if (addMessageCallback) {
     addMessageCallback();
   }
@@ -138,9 +151,43 @@ function App() {
       )
     ),
     React.createElement(Box, { flexDirection: 'column', height: currentQuiz ? 15 : 20, borderStyle: 'single', paddingX: 1 },
-      messageList.slice(-20).map((msg, i) =>
-        React.createElement(Text, { key: i }, msg)
-      )
+      messageList.slice(-20).map((msg, i) => {
+        if (msg.type === 'system') {
+          return React.createElement(Box, { key: i, justifyContent: 'center', marginY: 0.5 },
+            React.createElement(Box, {
+              paddingX: 1,
+              paddingY: 0.5,
+              backgroundColor: 'yellow',
+              borderStyle: 'single',
+              borderColor: 'yellow'
+            },
+              React.createElement(Text, { color: 'black', bold: true },
+                `${msg.text} (${getRelativeTime(msg.timestamp)})`
+              )
+            )
+          );
+        }
+        const isRight = msg.type === 'you'; // Learner messages on right
+        return React.createElement(Box, {
+          key: i,
+          flexDirection: 'row',
+          justifyContent: isRight ? 'flex-end' : 'flex-start',
+          marginY: 0.5,
+          width: '100%'
+        },
+          React.createElement(Box, {
+            paddingX: 1,
+            paddingY: 0.5,
+            backgroundColor: isRight ? 'blue' : 'gray',
+            width: '70%',
+            alignSelf: isRight ? 'flex-end' : 'flex-start'
+          },
+            React.createElement(Text, { color: 'white' },
+              isRight ? msg.text : `Educator: ${msg.text}`
+            )
+          )
+        );
+      })
     ),
     currentQuiz ? React.createElement(QuizDisplay, { quiz: currentQuiz }) : null,
     React.createElement(Box, { marginTop: 1 },
@@ -260,8 +307,13 @@ rl.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Render Ink app
-render(React.createElement(App));
+// Render Ink app with proper configuration
+render(React.createElement(App), {
+  stdout: process.stdout,
+  stdin: process.stdin,
+  exitOnCtrlC: false,
+  patchConsole: false
+});
 
 // Start connection
 setTimeout(() => {

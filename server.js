@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
+import { OLLAMA_MODELS, FALLBACK_MODEL } from './constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,21 +59,33 @@ let addMessageCallback = null;
 let updateStatusCallback = null;
 let updateLoadingCallback = null;
 
+// Function to get relative time
+function getRelativeTime(timestamp) {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (seconds < 60) {
+    return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
+  } else if (minutes < 60) {
+    return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+  } else if (hours < 24) {
+    return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  } else {
+    return new Date(timestamp).toLocaleTimeString();
+  }
+}
+
 // Function to add message to display
 function addMessage(text, type = 'info') {
-  const timestamp = new Date().toLocaleTimeString();
-  let prefix = '';
-  
-  if (type === 'learner') {
-    prefix = 'Learner';
-  } else if (type === 'you') {
-    prefix = 'Educator';
-  } else if (type === 'system') {
-    prefix = 'System';
-  }
-  
-  const message = `[${timestamp}] ${prefix}: ${text}`;
-  messageList.push(message);
+  const timestamp = Date.now();
+  messageList.push({
+    text: text,
+    type: type,
+    timestamp: timestamp
+  });
   if (addMessageCallback) {
     addMessageCallback();
   }
@@ -107,7 +120,7 @@ Where "correct" is the index (0-3) of the correct answer. Return ONLY the JSON, 
 
     // Try API first (port 11434 is default Ollama API port)
     const postData = JSON.stringify({
-      model: 'tinyllama',
+      model: OLLAMA_MODELS.EDUCATOR_MODEL,
       prompt: prompt,
       stream: false
     });
@@ -160,7 +173,7 @@ Where "correct" is the index (0-3) of the correct answer. Return ONLY the JSON, 
 
 // Fallback to command line
 function tryCommandLine(prompt, topic, resolve, reject) {
-  exec(`ollama run llama2 "${prompt.replace(/"/g, '\\"')}"`, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+  exec(`ollama run ${FALLBACK_MODEL} "${prompt.replace(/"/g, '\\"')}"`, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
     if (error) {
       resolve(createFallbackQuiz(topic));
       return;
@@ -232,9 +245,43 @@ function App() {
       )
     ),
     React.createElement(Box, { flexDirection: 'column', height: 20, borderStyle: 'single', paddingX: 1 },
-      messageList.slice(-20).map((msg, i) =>
-        React.createElement(Text, { key: i }, msg)
-      ),
+      messageList.slice(-20).map((msg, i) => {
+        if (msg.type === 'system') {
+          return React.createElement(Box, { key: i, justifyContent: 'center', marginY: 0.5 },
+            React.createElement(Box, {
+              paddingX: 1,
+              paddingY: 0.5,
+              backgroundColor: 'yellow',
+              borderStyle: 'single',
+              borderColor: 'yellow'
+            },
+              React.createElement(Text, { color: 'black', bold: true },
+                `${msg.text} (${getRelativeTime(msg.timestamp)})`
+              )
+            )
+          );
+        }
+        const isRight = msg.type === 'you'; // Educator messages on right
+        return React.createElement(Box, {
+          key: i,
+          flexDirection: 'row',
+          justifyContent: isRight ? 'flex-end' : 'flex-start',
+          marginY: 0.5,
+          width: '100%'
+        },
+          React.createElement(Box, {
+            paddingX: 1,
+            paddingY: 0.5,
+            backgroundColor: isRight ? 'blue' : 'green',
+            width: '70%',
+            alignSelf: isRight ? 'flex-end' : 'flex-start'
+          },
+            React.createElement(Text, { color: 'white' },
+              isRight ? msg.text : `Learner: ${msg.text}`
+            )
+          )
+        );
+      }),
       isGeneratingQuiz ? React.createElement(Box, { marginTop: 1 },
         React.createElement(Text, { color: 'cyan' },
           `${spinnerFrames[spinnerIndex]} Generating quiz...`
@@ -351,8 +398,13 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Render Ink app
-render(React.createElement(App));
+// Render Ink app with proper configuration
+render(React.createElement(App), {
+  stdout: process.stdout,
+  stdin: process.stdin,
+  exitOnCtrlC: false,
+  patchConsole: false
+});
 
 // Start readline prompt
 setTimeout(() => {
