@@ -111,6 +111,54 @@ function setGeneratingQuiz(generating) {
   }
 }
 
+// Update statistics display
+function updateStatisticsDisplay() {
+  if (updateStatisticsCallback) {
+    updateStatisticsCallback();
+  }
+}
+
+// Close statistics
+function closeStatistics() {
+  showStatistics = false;
+  updateStatisticsDisplay();
+}
+
+// Calculate statistics
+function calculateStatistics() {
+  if (!quizStatistics || !currentQuiz) {
+    return {
+      totalAnswered: 0,
+      averageScore: 0,
+      avgResponseTime: 0
+    };
+  }
+
+  const answers = quizStatistics.answers;
+  if (answers.length === 0) {
+    return {
+      totalAnswered: 0,
+      averageScore: 0,
+      avgResponseTime: 0
+    };
+  }
+
+  const totalAnswered = answers.length;
+  const correctCount = answers.filter(a => a.correct).length;
+  const averageScore = (correctCount / totalAnswered) * 100;
+  
+  const responseTimes = answers.map(a => a.responseTime).filter(t => t > 0);
+  const avgResponseTime = responseTimes.length > 0
+    ? responseTimes.reduce((sum, t) => sum + t, 0) / responseTimes.length
+    : 0;
+
+  return {
+    totalAnswered,
+    averageScore: Math.round(averageScore * 10) / 10,
+    avgResponseTime: Math.round(avgResponseTime / 1000) // Convert to seconds
+  };
+}
+
 // Function to call Ollama API
 function generateQuiz(topic) {
   return new Promise((resolve, reject) => {
@@ -218,8 +266,6 @@ function createFallbackQuiz(topic) {
 // React App Component
 // Statistics Component
 function StatisticsComponent({ stats, onClose }) {
-  if (!stats) return null;
-
   return React.createElement(Box, {
     marginY: 1,
     borderStyle: 'round',
@@ -275,6 +321,18 @@ function App() {
   }, []);
 
   const stats = showStatistics ? calculateStatistics() : null;
+  
+  // Force re-render when statistics change
+  React.useEffect(() => {
+    if (showStatistics && updateStatisticsCallback) {
+      const interval = setInterval(() => {
+        if (updateStatisticsCallback) {
+          updateStatisticsCallback();
+        }
+      }, 1000); // Update every second
+      return () => clearInterval(interval);
+    }
+  }, [showStatistics]);
 
   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const [spinnerIndex, setSpinnerIndex] = React.useState(0);
