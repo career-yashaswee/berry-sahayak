@@ -90,42 +90,29 @@ function QuizDisplay({ quiz }) {
   return React.createElement(Box, {
     borderStyle: 'round',
     borderColor: 'cyan',
-    paddingX: 2,
+    paddingX: 1,
     paddingY: 1,
     marginY: 1,
     backgroundColor: 'black'
   },
     React.createElement(Box, { marginBottom: 1 },
-      React.createElement(Text, { color: 'cyan', bold: true },
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-      )
-    ),
-    React.createElement(Box, { marginBottom: 1 },
       React.createElement(Text, { color: 'yellow', bold: true },
-        `📝 QUIZ: ${quiz.question}`
+        `QUIZ: ${quiz.question}`
       )
     ),
-    React.createElement(Box, { marginBottom: 1 },
-      React.createElement(Text, { color: 'cyan', bold: true },
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-      )
-    ),
-    quiz.options.map((option, i) => {
-      const letter = String.fromCharCode(65 + i);
-      const optionText = typeof option === 'string' ? option : String(option);
-      return React.createElement(Box, { key: i, marginY: 0.5 },
-        React.createElement(Text, { color: 'white' },
-          `${letter}. ${optionText}`
-        )
-      );
-    }),
-    React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { color: 'green', bold: true },
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-      )
+    React.createElement(Box, { flexDirection: 'column' },
+      quiz.options.map((option, i) => {
+        const letter = String.fromCharCode(65 + i);
+        const optionText = typeof option === 'string' ? option : String(option);
+        return React.createElement(Box, { key: i, marginY: 0.5 },
+          React.createElement(Text, { color: 'white' },
+            `${letter}. ${optionText}`
+          )
+        );
+      })
     ),
     React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { color: 'yellow' },
+      React.createElement(Text, { color: 'cyan' },
         'Type A, B, C, or D to answer'
       )
     )
