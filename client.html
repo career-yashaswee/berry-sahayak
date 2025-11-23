@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .connect-section {
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 20px 0;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        .message.you {
+            background: #e3f2fd;
+        }
+        .message.server {
+            background: #fff3e0;
+        }
+        .send-section {
+            display: none;
+        }
+        .send-section.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebSocket Client</h1>
+        
+        <div class="connect-section" id="connectSection">
+            <input type="text" id="ipInput" placeholder="Enter server IP (e.g., 192.168.1.100)" value="">
+            <button id="connectBtn" onclick="connect()">Connect</button>
+        </div>
+        
+        <div class="status disconnected" id="status">Disconnected</div>
+        
+        <div class="send-section" id="sendSection">
+            <div class="messages" id="messages"></div>
+            <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+            <button id="sendBtn" onclick="sendMessage()" style="margin-top: 10px;">Send</button>
+            <button onclick="disconnect()" style="margin-top: 10px; background: #dc3545;">Disconnect</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function connect() {
+            const ip = document.getElementById('ipInput').value.trim();
+            if (!ip) {
+                alert('Please enter server IP address');
+                return;
+            }
+
+            const url = `ws://${ip}:8080`;
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = () => {
+                    updateStatus(true);
+                    document.getElementById('connectSection').style.display = 'none';
+                    document.getElementById('sendSection').classList.add('active');
+                    addMessage('Connected to server', 'server');
+                };
+                
+                ws.onmessage = (event) => {
+                    addMessage(event.data, 'server');
+                };
+                
+                ws.onclose = () => {
+                    updateStatus(false);
+                    document.getElementById('connectSection').style.display = 'block';
+                    document.getElementById('sendSection').classList.remove('active');
+                    addMessage('Disconnected from server', 'server');
+                };
+                
+                ws.onerror = (error) => {
+                    alert('Connection failed. Check IP address and ensure server is running.');
+                    updateStatus(false);
+                };
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(message);
+                addMessage(message, 'you');
+                input.value = '';
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function addMessage(text, type) {
+            const messages = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            if (connected) {
+                status.textContent = 'Connected';
+                status.className = 'status connected';
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'status disconnected';
+            }
+        }
+    </script>
+</body>
+</html>
+

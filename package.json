@@ -1,0 +1,14 @@
+{
+  "name": "berry-sahayak",
+  "version": "1.0.0",
+  "description": "Simple WebSocket communication between devices",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "blessed": "^0.1.81"
+  }
+}
+
