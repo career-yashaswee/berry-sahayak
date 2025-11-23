@@ -2,13 +2,16 @@ import { WebSocket } from 'ws';
 import React from 'react';
 import { render, Box, Text } from 'ink';
 import readline from 'readline';
-import { OLLAMA_MODELS } from './constants.js';
+import { OLLAMA_MODELS, EDUCATOR_IP } from './constants.js';
 
-// Get educator IP from command line
-const educatorIP = process.argv[2];
+// Get educator IP from command line or constants
+const educatorIP = process.argv[2] || EDUCATOR_IP;
 
 if (!educatorIP) {
-  console.error('Usage: node client.js <educator-ip>');
+  console.error('Error: Educator IP not configured');
+  console.error('');
+  console.error('Option 1: Set EDUCATOR_IP in constants.js');
+  console.error('Option 2: Pass IP as argument: node client.js <educator-ip>');
   console.error('Example: node client.js 192.168.1.100');
   process.exit(1);
 }
