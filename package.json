@@ -2,13 +2,15 @@
   "name": "berry-sahayak",
   "version": "1.0.0",
   "description": "Simple WebSocket communication between devices",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "ws": "^8.16.0",
-    "blessed": "^0.1.81"
+    "ink": "^4.4.1",
+    "react": "^18.2.0"
   }
 }
 

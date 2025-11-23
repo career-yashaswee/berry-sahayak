@@ -96,6 +96,35 @@
         .send-section.active {
             display: block;
         }
+        .quiz {
+            margin: 10px 0;
+            padding: 15px;
+            background: #e8f5e9;
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+        }
+        .quiz-question {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #2e7d32;
+            font-size: 18px;
+        }
+        .quiz-option {
+            margin: 8px 0;
+            padding: 10px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .quiz-option:hover {
+            background: #f0f0f0;
+        }
+        .quiz-option.selected {
+            background: #bbdefb;
+            border-color: #2196f3;
+        }
     </style>
 </head>
 <body>
@@ -140,7 +169,17 @@
                 };
                 
                 ws.onmessage = (event) => {
-                    addMessage(event.data, 'server');
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'quiz') {
+                            displayQuiz(data.data);
+                        } else if (data.type === 'message') {
+                            addMessage(data.data, 'server');
+                        }
+                    } catch (e) {
+                        // Legacy: plain text message
+                        addMessage(event.data, 'server');
+                    }
                 };
                 
                 ws.onclose = () => {
@@ -201,6 +240,35 @@
                 status.textContent = 'Disconnected';
                 status.className = 'status disconnected';
             }
+        }
+
+        function displayQuiz(quiz) {
+            const messages = document.getElementById('messages');
+            const quizDiv = document.createElement('div');
+            quizDiv.className = 'quiz';
+            
+            const questionDiv = document.createElement('div');
+            questionDiv.className = 'quiz-question';
+            questionDiv.textContent = quiz.question;
+            quizDiv.appendChild(questionDiv);
+            
+            quiz.options.forEach((option, index) => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'quiz-option';
+                optionDiv.textContent = `${String.fromCharCode(65 + index)}. ${option}`;
+                optionDiv.onclick = function() {
+                    // Remove selected class from all options
+                    quizDiv.querySelectorAll('.quiz-option').forEach(opt => {
+                        opt.classList.remove('selected');
+                    });
+                    // Add selected class to clicked option
+                    this.classList.add('selected');
+                };
+                quizDiv.appendChild(optionDiv);
+            });
+            
+            messages.appendChild(quizDiv);
+            messages.scrollTop = messages.scrollHeight;
         }
     </script>
 </body>

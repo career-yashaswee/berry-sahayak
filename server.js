@@ -1,9 +1,16 @@
-const WebSocket = require('ws');
-const blessed = require('blessed');
-const os = require('os');
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import { WebSocketServer, WebSocket } from 'ws';
+import React from 'react';
+import { render, Box, Text } from 'ink';
+import readline from 'readline';
+import os from 'os';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { exec } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Get local IP address
 function getLocalIP() {
@@ -41,91 +48,13 @@ const server = http.createServer((req, res) => {
 });
 
 // Create WebSocket server
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocketServer({ server });
 
 let client = null;
-
-// Create blessed screen
-const screen = blessed.screen({
-  smartCSR: true,
-  title: 'WebSocket Chat',
-  fullUnicode: false,
-  fastCSR: true,
-  dockBorders: false
-});
-
-// Header box
-const header = blessed.box({
-  top: 0,
-  left: 0,
-  width: '100%',
-  height: 3,
-  content: `Server: ${localIP}:${PORT} | Status: Waiting...`,
-  style: {
-    fg: 'white',
-    bg: 'blue',
-    bold: true
-  }
-});
-
-// Messages log
-const messages = blessed.log({
-  top: 3,
-  left: 0,
-  width: '100%',
-  height: '100%-7',
-  scrollable: true,
-  alwaysScroll: true,
-  scrollbar: {
-    ch: ' ',
-    inverse: true
-  },
-  style: {
-    fg: 'white',
-    bg: 'black'
-  },
-  keys: false,
-  mouse: true
-});
-
-// Input label
-const inputLabel = blessed.box({
-  bottom: 3,
-  left: 0,
-  width: '100%',
-  height: 1,
-  content: 'Send message | Press Enter to Send',
-  style: {
-    fg: 'yellow',
-    bg: 'black',
-    bold: true
-  }
-});
-
-// Input box
-const input = blessed.textbox({
-  bottom: 0,
-  left: 0,
-  width: '100%',
-  height: 3,
-  inputOnFocus: true,
-  style: {
-    fg: 'black',
-    bg: 'white',
-    focus: {
-      fg: 'black',
-      bg: 'white'
-    }
-  },
-  keys: true,
-  mouse: true
-});
-
-// Append boxes to screen
-screen.append(header);
-screen.append(messages);
-screen.append(inputLabel);
-screen.append(input);
+let messageList = [];
+let status = 'Waiting for connection...';
+let addMessageCallback = null;
+let updateStatusCallback = null;
 
 // Function to add message to display
 function addMessage(text, type = 'info') {
@@ -141,45 +70,208 @@ function addMessage(text, type = 'info') {
   }
   
   const message = `[${timestamp}] ${prefix}: ${text}`;
-  messages.log(message);
-  input.focus();
-  screen.render();
+  messageList.push(message);
+  if (addMessageCallback) {
+    addMessageCallback();
+  }
 }
 
 // Update header status
-function updateStatus(status) {
-  header.setContent(`Server: ${localIP}:${PORT} | Status: ${status}`);
-  screen.render();
+function updateStatus(newStatus) {
+  status = newStatus;
+  if (updateStatusCallback) {
+    updateStatusCallback();
+  }
 }
 
-// Input handler
-input.on('submit', (value) => {
-  const message = value ? value.trim() : '';
-  if (message) {
-    if (client && client.readyState === WebSocket.OPEN) {
-      client.send(message);
-      addMessage(message, 'you');
-      input.clearValue();
-      input.focus();
-    } else {
-      addMessage('No client connected', 'system');
-      input.clearValue();
-      input.focus();
+// Function to call Ollama API
+function generateQuiz(topic) {
+  return new Promise((resolve, reject) => {
+    const prompt = `Create a quiz question about "${topic}". Format your response as JSON with this exact structure:
+{
+  "question": "Your question here",
+  "options": ["Option A", "Option B", "Option C", "Option D"],
+  "correct": 0
+}
+Where "correct" is the index (0-3) of the correct answer. Return ONLY the JSON, no other text.`;
+
+    // Try API first (port 11434 is default Ollama API port)
+    const postData = JSON.stringify({
+      model: 'tinyllama',
+      prompt: prompt,
+      stream: false
+    });
+
+    const options = {
+      hostname: 'localhost',
+      port: 11434,
+      path: '/api/generate',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+          const responseText = response.response || '';
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const quiz = JSON.parse(jsonMatch[0]);
+            resolve(quiz);
+          } else {
+            resolve(createFallbackQuiz(topic));
+          }
+        } catch (error) {
+          tryCommandLine(prompt, topic, resolve, reject);
+        }
+      });
+    });
+
+    req.on('error', () => {
+      tryCommandLine(prompt, topic, resolve, reject);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Fallback to command line
+function tryCommandLine(prompt, topic, resolve, reject) {
+  exec(`ollama run llama2 "${prompt.replace(/"/g, '\\"')}"`, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    if (error) {
+      resolve(createFallbackQuiz(topic));
+      return;
     }
-  } else {
-    input.clearValue();
-    input.focus();
-  }
+    
+    try {
+      const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const quiz = JSON.parse(jsonMatch[0]);
+        resolve(quiz);
+      } else {
+        resolve(createFallbackQuiz(topic));
+      }
+    } catch (parseError) {
+      resolve(createFallbackQuiz(topic));
+    }
+  });
+}
+
+// Create fallback quiz
+function createFallbackQuiz(topic) {
+  return {
+    question: `Quiz: ${topic}`,
+    options: [
+      `Option A about ${topic}`,
+      `Option B about ${topic}`,
+      `Option C about ${topic}`,
+      `Option D about ${topic}`
+    ],
+    correct: 0
+  };
+}
+
+// React App Component
+function App() {
+  const [, forceUpdate] = React.useReducer(x => x + 1, 0);
+
+  React.useEffect(() => {
+    addMessageCallback = () => forceUpdate();
+    updateStatusCallback = () => forceUpdate();
+    return () => {
+      addMessageCallback = null;
+      updateStatusCallback = null;
+    };
+  }, []);
+
+  return React.createElement(Box, { flexDirection: 'column' },
+    React.createElement(Box, { backgroundColor: 'blue', paddingX: 1, paddingY: 0 },
+      React.createElement(Text, { color: 'white', bold: true },
+        `Server: ${localIP}:${PORT} | Status: ${status}`
+      )
+    ),
+    React.createElement(Box, { flexDirection: 'column', height: 20, borderStyle: 'single', paddingX: 1 },
+      messageList.slice(-20).map((msg, i) =>
+        React.createElement(Text, { key: i }, msg)
+      )
+    ),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { color: 'yellow' },
+        'Send message | Press Enter to Send | Type /quiz [topic] for quiz'
+      )
+    )
+  );
+}
+
+// Setup readline for input
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  prompt: '> '
 });
 
-// Quit on Escape, q, or Control-C
-screen.key(['escape', 'q', 'C-c'], () => {
+// Handle input submission
+rl.on('line', async (line) => {
+  const message = line.trim();
+  
+  if (message) {
+    // Check if it's a /quiz command
+    if (message.startsWith('/quiz')) {
+      const topic = message.substring(5).trim();
+      if (!topic) {
+        addMessage('Usage: /quiz [topic] - e.g., /quiz Photosynthesis', 'system');
+        rl.prompt();
+        return;
+      }
+      
+      if (!client || client.readyState !== WebSocket.OPEN) {
+        addMessage('No client connected', 'system');
+        rl.prompt();
+        return;
+      }
+      
+      addMessage(`Generating quiz: ${topic}...`, 'system');
+      
+      try {
+        const quiz = await generateQuiz(topic);
+        client.send(JSON.stringify({ type: 'quiz', data: quiz }));
+        addMessage(`Quiz sent: ${quiz.question}`, 'system');
+      } catch (error) {
+        addMessage(`Error generating quiz: ${error.message}`, 'system');
+      }
+    } else {
+      // Regular message
+      if (client && client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type: 'message', data: message }));
+        addMessage(message, 'you');
+      } else {
+        addMessage('No client connected', 'system');
+      }
+    }
+  }
+  
+  rl.prompt();
+});
+
+// Quit on Control-C
+rl.on('SIGINT', () => {
+  console.log('\nShutting down...');
   if (client) {
     client.close();
   }
   wss.close();
   server.close();
-  return process.exit(0);
+  rl.close();
+  process.exit(0);
 });
 
 // Start HTTP server
@@ -194,8 +286,15 @@ wss.on('connection', (ws) => {
   addMessage('Client connected', 'system');
   
   ws.on('message', (message) => {
-    const text = message.toString();
-    addMessage(text, 'mobile');
+    try {
+      const data = JSON.parse(message.toString());
+      if (data.type === 'message') {
+        addMessage(data.data, 'mobile');
+      }
+    } catch (e) {
+      const text = message.toString();
+      addMessage(text, 'mobile');
+    }
   });
   
   ws.on('close', () => {
@@ -209,9 +308,10 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Focus input initially
-input.focus();
+// Render Ink app
+render(React.createElement(App));
 
-// Render screen
-screen.render();
-
+// Start readline prompt
+setTimeout(() => {
+  rl.prompt();
+}, 100);
