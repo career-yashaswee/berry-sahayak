@@ -18,6 +18,31 @@ The server will display your local IP address and port.
 
 ## Usage
 
+### Terminal Client (Recommended)
+
+1. **Start the server (Teacher):**
+   ```bash
+   npm start
+   ```
+   The server will display your local IP address (e.g., `192.168.1.100`).
+
+2. **Connect as student:**
+   ```bash
+   node client.js [TEACHER_IP]
+   # Example: node client.js 192.168.1.100
+   ```
+   Or use the npm script:
+   ```bash
+   npm run client [TEACHER_IP]
+   ```
+
+3. **Start messaging:**
+   - Teacher: Type messages in terminal and press Enter
+   - Student: Type messages in terminal and press Enter
+   - Use `/quiz [topic]` command on teacher side to generate quizzes
+
+### Web Browser Client (Alternative)
+
 1. On your mobile device (connected to the same Wi-Fi network), open a browser and go to:
    ```
    http://[YOUR_MACBOOK_IP]:8080/client.html
@@ -32,6 +57,7 @@ The server will display your local IP address and port.
 
 ## Files
 
-- `server.js` - WebSocket server with terminal interface
-- `client.html` - Simple HTML client for mobile browser
+- `server.js` - WebSocket server with terminal interface (Teacher)
+- `client.js` - Terminal client interface (Student)
+- `client.html` - Simple HTML client for mobile browser (Alternative)
 - `package.json` - Project dependencies
