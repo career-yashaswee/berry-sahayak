@@ -27,6 +27,8 @@ let status = 'Connecting...';
 let currentQuiz = null;
 let quizHint = null;
 let isGeneratingHint = false;
+let hintExpanded = false;
+let answerFeedback = null;
 let addMessageCallback = null;
 let updateStatusCallback = null;
 let updateQuizCallback = null;
@@ -84,9 +86,27 @@ function setQuiz(quiz) {
 function clearQuiz() {
   currentQuiz = null;
   quizHint = null;
+  hintExpanded = false;
+  answerFeedback = null;
   if (updateQuizCallback) {
     updateQuizCallback();
   }
+  if (updateHintCallback) {
+    updateHintCallback();
+  }
+}
+
+// Toggle hint expansion
+function toggleHint() {
+  hintExpanded = !hintExpanded;
+  if (updateHintCallback) {
+    updateHintCallback();
+  }
+}
+
+// Set answer feedback
+function setAnswerFeedback(feedback) {
+  answerFeedback = feedback;
   if (updateHintCallback) {
     updateHintCallback();
   }
@@ -175,8 +195,49 @@ function tryCommandLineHint(prompt, resolve, reject) {
   });
 }
 
+// Hint Component (Collapsible)
+function HintComponent({ hint, isGenerating, expanded, onToggle }) {
+  if (!hint && !isGenerating) return null;
+
+  return React.createElement(Box, {
+    marginY: 1,
+    borderStyle: 'single',
+    borderColor: 'blue'
+  },
+    React.createElement(Box, {
+      flexDirection: 'row',
+      paddingX: 1,
+      paddingY: 0.5,
+      backgroundColor: 'blue',
+      onClick: onToggle
+    },
+      React.createElement(Text, { color: 'white', bold: true },
+        `HINT ${expanded ? '[-]' : '[+]'}`
+      )
+    ),
+    expanded && hint ? React.createElement(Box, {
+      paddingX: 1,
+      paddingY: 0.5,
+      backgroundColor: 'black'
+    },
+      React.createElement(Text, { color: 'white' },
+        hint
+      )
+    ) : null,
+    isGenerating ? React.createElement(Box, {
+      paddingX: 1,
+      paddingY: 0.5,
+      backgroundColor: 'black'
+    },
+      React.createElement(Text, { color: 'cyan' },
+        'Generating hint...'
+      )
+    ) : null
+  );
+}
+
 // Quiz Component
-function QuizDisplay({ quiz, hint, isGenerating }) {
+function QuizDisplay({ quiz, hint, isGenerating, hintExpanded, onToggleHint, feedback }) {
   if (!quiz) return null;
 
   return React.createElement(Box, {
@@ -192,26 +253,27 @@ function QuizDisplay({ quiz, hint, isGenerating }) {
         `QUIZ: ${quiz.question}`
       )
     ),
-    hint ? React.createElement(Box, {
+    React.createElement(HintComponent, {
+      hint: hint,
+      isGenerating: isGenerating,
+      expanded: hintExpanded,
+      onToggle: onToggleHint
+    }),
+    feedback ? React.createElement(Box, {
       marginY: 1,
       paddingX: 1,
       paddingY: 0.5,
-      backgroundColor: 'blue',
+      backgroundColor: feedback.correct ? 'green' : 'red',
       borderStyle: 'single',
-      borderColor: 'blue'
+      borderColor: feedback.correct ? 'green' : 'red'
     },
       React.createElement(Text, { color: 'white', bold: true },
-        'HINT:'
+        feedback.correct ? '✓ Correct!' : '✗ Incorrect'
       ),
       React.createElement(Box, { marginTop: 0.5 },
         React.createElement(Text, { color: 'white' },
-          hint
+          feedback.message
         )
-      )
-    ) : null,
-    isGenerating ? React.createElement(Box, { marginY: 1 },
-      React.createElement(Text, { color: 'cyan' },
-        'Generating hint...'
       )
     ) : null,
     React.createElement(Box, { flexDirection: 'column' },
@@ -227,7 +289,7 @@ function QuizDisplay({ quiz, hint, isGenerating }) {
     ),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { color: 'cyan' },
-        hint ? 'Type A, B, C, or D to answer' : 'Type A, B, C, or D to answer | Type /hint for a hint'
+        feedback ? 'Quiz completed!' : hint ? 'Type A, B, C, or D to answer | Type "toggle" to expand/collapse hint' : 'Type A, B, C, or D to answer | Type /hint for a hint'
       )
     )
   );
@@ -320,7 +382,14 @@ function App() {
         );
       })
     ),
-    currentQuiz ? React.createElement(QuizDisplay, { quiz: currentQuiz, hint: quizHint, isGenerating: isGeneratingHint }) : null,
+    currentQuiz ? React.createElement(QuizDisplay, {
+      quiz: currentQuiz,
+      hint: quizHint,
+      isGenerating: isGeneratingHint,
+      hintExpanded: hintExpanded,
+      onToggleHint: toggleHint,
+      feedback: answerFeedback
+    }) : null,
     isDisconnected ? React.createElement(ReconnectButton, { onReconnect: connect }) : null,
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { color: currentQuiz ? 'cyan' : isDisconnected ? 'red' : 'yellow' },
@@ -426,7 +495,7 @@ rl.on('line', (line) => {
       return;
     }
     if (quizHint) {
-      addMessage('Hint already shown', 'system');
+      toggleHint();
       rl.prompt();
       return;
     }
@@ -441,6 +510,10 @@ rl.on('line', (line) => {
       .then(hint => {
         setGeneratingHint(false);
         setQuizHint(hint);
+        hintExpanded = true; // Auto-expand when hint is first generated
+        if (updateHintCallback) {
+          updateHintCallback();
+        }
         addMessage('Hint generated', 'system');
       })
       .catch(error => {
@@ -451,29 +524,45 @@ rl.on('line', (line) => {
     return;
   }
 
+  // Handle toggle hint command
+  if (inputUpper === 'TOGGLE' && currentQuiz && quizHint) {
+    toggleHint();
+    rl.prompt();
+    return;
+  }
+
   // Check if there's an active quiz and user is answering
   if (currentQuiz && (inputUpper === 'A' || inputUpper === 'B' || inputUpper === 'C' || inputUpper === 'D')) {
-    const answerIndex = input.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
-    const selectedOption = currentQuiz.options[answerIndex];
+    if (answerFeedback) {
+      addMessage('You have already answered this quiz', 'system');
+      rl.prompt();
+      return;
+    }
     
-    // Send answer to educator
+    const answerIndex = inputUpper.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
+    const selectedOption = currentQuiz.options[answerIndex];
+    const answerTime = Date.now();
+    
+    // Send answer to educator with timestamp
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'quiz_answer',
         data: {
           question: currentQuiz.question,
-          answer: input,
+          answer: inputUpper,
           answerIndex: answerIndex,
-          selectedOption: selectedOption
+          selectedOption: selectedOption,
+          timestamp: answerTime,
+          quizStartTime: currentQuiz.startTime || answerTime
         }
       }));
       
       addMessage(`Answered: ${inputUpper}. ${selectedOption}`, 'you');
-      clearQuiz();
+      // Don't clear quiz yet - wait for feedback
     } else {
       addMessage('Not connected to educator', 'system');
     }
-  } else if (currentQuiz && inputUpper !== 'A' && inputUpper !== 'B' && inputUpper !== 'C' && inputUpper !== 'D' && inputUpper !== '/HINT' && inputUpper !== 'HINT') {
+  } else if (currentQuiz && inputUpper !== 'A' && inputUpper !== 'B' && inputUpper !== 'C' && inputUpper !== 'D' && inputUpper !== '/HINT' && inputUpper !== 'HINT' && inputUpper !== 'TOGGLE') {
     // User typed something else while quiz is active
     addMessage('Please answer the quiz (A, B, C, or D) or type /hint for a hint', 'system');
   } else {

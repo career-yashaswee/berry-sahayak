@@ -55,9 +55,13 @@ let client = null;
 let messageList = [];
 let status = 'Waiting for connection...';
 let isGeneratingQuiz = false;
+let currentQuiz = null;
+let quizStatistics = null;
+let showStatistics = false;
 let addMessageCallback = null;
 let updateStatusCallback = null;
 let updateLoadingCallback = null;
+let updateStatisticsCallback = null;
 
 // Function to get relative time
 function getRelativeTime(timestamp) {
@@ -114,7 +118,7 @@ function generateQuiz(topic) {
 {
   "question": "Your question here",
   "options": ["Option A", "Option B", "Option C", "Option D"],
-  "correct": 0
+  "correct": 0,1,2,3
 }
 Where "correct" is the index (0-3) of the correct answer. Return ONLY the JSON, no other text.`;
 
@@ -212,6 +216,48 @@ function createFallbackQuiz(topic) {
 }
 
 // React App Component
+// Statistics Component
+function StatisticsComponent({ stats, onClose }) {
+  if (!stats) return null;
+
+  return React.createElement(Box, {
+    marginY: 1,
+    borderStyle: 'round',
+    borderColor: 'green',
+    paddingX: 1,
+    paddingY: 1,
+    backgroundColor: 'black'
+  },
+    React.createElement(Box, {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 1
+    },
+      React.createElement(Text, { color: 'green', bold: true },
+        'CLASS STATISTICS'
+      ),
+      React.createElement(Text, { color: 'yellow' },
+        'Type "close stats" to close'
+      )
+    ),
+    React.createElement(Box, { marginY: 0.5 },
+      React.createElement(Text, { color: 'white' },
+        `Total Students Answered: ${stats.totalAnswered}`
+      )
+    ),
+    React.createElement(Box, { marginY: 0.5 },
+      React.createElement(Text, { color: 'white' },
+        `Class Average: ${stats.averageScore}%`
+      )
+    ),
+    React.createElement(Box, { marginY: 0.5 },
+      React.createElement(Text, { color: 'white' },
+        `Average Response Time: ${stats.avgResponseTime}s`
+      )
+    )
+  );
+}
+
 function App() {
   const [, forceUpdate] = React.useReducer(x => x + 1, 0);
 
@@ -219,12 +265,16 @@ function App() {
     addMessageCallback = () => forceUpdate();
     updateStatusCallback = () => forceUpdate();
     updateLoadingCallback = () => forceUpdate();
+    updateStatisticsCallback = () => forceUpdate();
     return () => {
       addMessageCallback = null;
       updateStatusCallback = null;
       updateLoadingCallback = null;
+      updateStatisticsCallback = null;
     };
   }, []);
+
+  const stats = showStatistics ? calculateStatistics() : null;
 
   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const [spinnerIndex, setSpinnerIndex] = React.useState(0);
@@ -288,9 +338,13 @@ function App() {
         )
       ) : null
     ),
+    showStatistics ? React.createElement(StatisticsComponent, {
+      stats: stats,
+      onClose: closeStatistics
+    }) : null,
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { color: 'yellow' },
-        'Send message | Press Enter to Send | Type /quiz [topic] for quiz'
+        'Send message | Press Enter to Send | Type /quiz [topic] for quiz | Type "close stats" to close statistics'
       )
     )
   );
@@ -308,6 +362,13 @@ rl.on('line', async (line) => {
   const message = line.trim();
   
   if (message) {
+    // Check if it's a close stats command
+    if (message.toLowerCase() === 'close stats' || message.toLowerCase() === '/close stats') {
+      closeStatistics();
+      rl.prompt();
+      return;
+    }
+    
     // Check if it's a /quiz command
     if (message.startsWith('/quiz')) {
       const topic = message.substring(5).trim();
@@ -329,6 +390,16 @@ rl.on('line', async (line) => {
       try {
         const quiz = await generateQuiz(topic);
         setGeneratingQuiz(false);
+        // Initialize quiz statistics
+        currentQuiz = quiz;
+        quizStatistics = {
+          answers: [],
+          startTime: Date.now()
+        };
+        showStatistics = true;
+        updateStatisticsDisplay();
+        // Add start time to quiz for response time calculation
+        quiz.startTime = quizStatistics.startTime;
         client.send(JSON.stringify({ type: 'quiz', data: quiz }));
         addMessage(`Quiz sent: ${quiz.question}`, 'system');
       } catch (error) {

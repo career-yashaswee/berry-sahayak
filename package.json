@@ -5,7 +5,7 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "npx kill-port 8080 && node server.js",
     "client": "node client.js"
   },
   "dependencies": {
