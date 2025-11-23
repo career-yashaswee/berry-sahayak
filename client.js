@@ -2,7 +2,9 @@ import { WebSocket } from 'ws';
 import React from 'react';
 import { render, Box, Text } from 'ink';
 import readline from 'readline';
-import { OLLAMA_MODELS, EDUCATOR_IP } from './constants.js';
+import http from 'http';
+import { exec } from 'child_process';
+import { OLLAMA_MODELS, FALLBACK_MODEL, EDUCATOR_IP } from './constants.js';
 
 // Get educator IP from command line or constants
 const educatorIP = process.argv[2] || EDUCATOR_IP;
@@ -23,9 +25,12 @@ let ws = null;
 let messageList = [];
 let status = 'Connecting...';
 let currentQuiz = null;
+let quizHint = null;
+let isGeneratingHint = false;
 let addMessageCallback = null;
 let updateStatusCallback = null;
 let updateQuizCallback = null;
+let updateHintCallback = null;
 
 // Function to get relative time
 function getRelativeTime(timestamp) {
@@ -78,13 +83,100 @@ function setQuiz(quiz) {
 // Clear quiz
 function clearQuiz() {
   currentQuiz = null;
+  quizHint = null;
   if (updateQuizCallback) {
     updateQuizCallback();
   }
+  if (updateHintCallback) {
+    updateHintCallback();
+  }
+}
+
+// Set quiz hint
+function setQuizHint(hint) {
+  quizHint = hint;
+  if (updateHintCallback) {
+    updateHintCallback();
+  }
+}
+
+// Set hint generating state
+function setGeneratingHint(generating) {
+  isGeneratingHint = generating;
+  if (updateHintCallback) {
+    updateHintCallback();
+  }
+}
+
+// Generate hint using Ollama
+function generateHint(question) {
+  return new Promise((resolve, reject) => {
+    const prompt = `Question: "${question}"
+
+Provide a Socratic reasoning hint for this question. A Socratic hint should:
+- Guide the learner to think through the problem
+- Ask leading questions rather than giving direct answers
+- Help them reason through the concepts
+- Be concise (2-3 sentences)
+
+Provide only the hint, no additional explanation.`;
+
+    // Try API first
+    const postData = JSON.stringify({
+      model: OLLAMA_MODELS.LEARNER_MODEL,
+      prompt: prompt,
+      stream: false
+    });
+
+    const options = {
+      hostname: 'localhost',
+      port: 11434,
+      path: '/api/generate',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+          const hint = response.response || 'Think about the key concepts in the question.';
+          resolve(hint.trim());
+        } catch (error) {
+          tryCommandLineHint(prompt, resolve, reject);
+        }
+      });
+    });
+
+    req.on('error', () => {
+      tryCommandLineHint(prompt, resolve, reject);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Fallback to command line for hint
+function tryCommandLineHint(prompt, resolve, reject) {
+  exec(`ollama run ${FALLBACK_MODEL} "${prompt.replace(/"/g, '\\"')}"`, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    if (error) {
+      resolve('Think about the key concepts in the question.');
+      return;
+    }
+    resolve(stdout.trim() || 'Think about the key concepts in the question.');
+  });
 }
 
 // Quiz Component
-function QuizDisplay({ quiz }) {
+function QuizDisplay({ quiz, hint, isGenerating }) {
   if (!quiz) return null;
 
   return React.createElement(Box, {
@@ -100,6 +192,28 @@ function QuizDisplay({ quiz }) {
         `QUIZ: ${quiz.question}`
       )
     ),
+    hint ? React.createElement(Box, {
+      marginY: 1,
+      paddingX: 1,
+      paddingY: 0.5,
+      backgroundColor: 'blue',
+      borderStyle: 'single',
+      borderColor: 'blue'
+    },
+      React.createElement(Text, { color: 'white', bold: true },
+        'HINT:'
+      ),
+      React.createElement(Box, { marginTop: 0.5 },
+        React.createElement(Text, { color: 'white' },
+          hint
+        )
+      )
+    ) : null,
+    isGenerating ? React.createElement(Box, { marginY: 1 },
+      React.createElement(Text, { color: 'cyan' },
+        'Generating hint...'
+      )
+    ) : null,
     React.createElement(Box, { flexDirection: 'column' },
       quiz.options.map((option, i) => {
         const letter = String.fromCharCode(65 + i);
@@ -113,7 +227,30 @@ function QuizDisplay({ quiz }) {
     ),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { color: 'cyan' },
-        'Type A, B, C, or D to answer'
+        hint ? 'Type A, B, C, or D to answer' : 'Type A, B, C, or D to answer | Type /hint for a hint'
+      )
+    )
+  );
+}
+
+// Reconnect Button Component
+function ReconnectButton({ onReconnect }) {
+  return React.createElement(Box, {
+    marginTop: 1,
+    paddingX: 1,
+    paddingY: 1,
+    backgroundColor: 'red',
+    borderStyle: 'round',
+    borderColor: 'red'
+  },
+    React.createElement(Box, { marginBottom: 1 },
+      React.createElement(Text, { color: 'white', bold: true },
+        'Disconnected from Educator'
+      )
+    ),
+    React.createElement(Box,
+      React.createElement(Text, { color: 'yellow' },
+        'Type "reconnect" and press Enter to reconnect'
       )
     )
   );
@@ -127,15 +264,19 @@ function App() {
     addMessageCallback = () => forceUpdate();
     updateStatusCallback = () => forceUpdate();
     updateQuizCallback = () => forceUpdate();
+    updateHintCallback = () => forceUpdate();
     return () => {
       addMessageCallback = null;
       updateStatusCallback = null;
       updateQuizCallback = null;
+      updateHintCallback = null;
     };
   }, []);
 
+  const isDisconnected = status === 'Disconnected' || status === 'Error';
+
   return React.createElement(Box, { flexDirection: 'column' },
-    React.createElement(Box, { backgroundColor: 'green', paddingX: 1, paddingY: 0 },
+    React.createElement(Box, { backgroundColor: isDisconnected ? 'red' : 'green', paddingX: 1, paddingY: 0 },
       React.createElement(Text, { color: 'white', bold: true },
         `Sahayak - Learner Mode | Connected to: ${educatorIP}:${PORT} | Status: ${status}`
       )
@@ -179,10 +320,13 @@ function App() {
         );
       })
     ),
-    currentQuiz ? React.createElement(QuizDisplay, { quiz: currentQuiz }) : null,
+    currentQuiz ? React.createElement(QuizDisplay, { quiz: currentQuiz, hint: quizHint, isGenerating: isGeneratingHint }) : null,
+    isDisconnected ? React.createElement(ReconnectButton, { onReconnect: connect }) : null,
     React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { color: currentQuiz ? 'cyan' : 'yellow' },
-        currentQuiz ? 'Type A, B, C, or D to answer the quiz' : 'Type your message and press Enter to send'
+      React.createElement(Text, { color: currentQuiz ? 'cyan' : isDisconnected ? 'red' : 'yellow' },
+        currentQuiz ? 'Type A, B, C, or D to answer the quiz' : 
+        isDisconnected ? 'Type "reconnect" to reconnect to educator' :
+        'Type your message and press Enter to send'
       )
     )
   );
@@ -197,6 +341,15 @@ const rl = readline.createInterface({
 
 // Connect to WebSocket server
 function connect() {
+  // Close existing connection if any
+  if (ws) {
+    ws.removeAllListeners();
+    if (ws.readyState !== WebSocket.CLOSED) {
+      ws.close();
+    }
+    ws = null;
+  }
+
   updateStatus('Connecting...');
   addMessage(`Connecting to educator at ${educatorIP}:${PORT}...`, 'system');
 
@@ -217,6 +370,8 @@ function connect() {
         } else if (message.type === 'quiz') {
           // Display quiz in special component
           setQuiz(message.data);
+          quizHint = null; // Clear previous hint when new quiz arrives
+          isGeneratingHint = false; // Clear generating state
           addMessage('New quiz received!', 'system');
         }
       } catch (e) {
@@ -242,15 +397,62 @@ function connect() {
 
 // Handle input submission
 rl.on('line', (line) => {
-  const input = line.trim().toUpperCase();
+  const input = line.trim();
+  const inputUpper = input.toUpperCase();
   
   if (!input) {
     rl.prompt();
     return;
   }
 
+  // Handle reconnect command
+  if (inputUpper === 'RECONNECT' || inputUpper === 'R') {
+    if (status === 'Disconnected' || status === 'Error') {
+      connect();
+      rl.prompt();
+      return;
+    } else {
+      addMessage('Already connected', 'system');
+      rl.prompt();
+      return;
+    }
+  }
+
+  // Handle hint command
+  if (inputUpper === '/HINT' || inputUpper === 'HINT') {
+    if (!currentQuiz) {
+      addMessage('No active quiz', 'system');
+      rl.prompt();
+      return;
+    }
+    if (quizHint) {
+      addMessage('Hint already shown', 'system');
+      rl.prompt();
+      return;
+    }
+    if (isGeneratingHint) {
+      addMessage('Generating hint, please wait...', 'system');
+      rl.prompt();
+      return;
+    }
+    
+    setGeneratingHint(true);
+    generateHint(currentQuiz.question)
+      .then(hint => {
+        setGeneratingHint(false);
+        setQuizHint(hint);
+        addMessage('Hint generated', 'system');
+      })
+      .catch(error => {
+        setGeneratingHint(false);
+        addMessage(`Error generating hint: ${error.message}`, 'system');
+      });
+    rl.prompt();
+    return;
+  }
+
   // Check if there's an active quiz and user is answering
-  if (currentQuiz && (input === 'A' || input === 'B' || input === 'C' || input === 'D')) {
+  if (currentQuiz && (inputUpper === 'A' || inputUpper === 'B' || inputUpper === 'C' || inputUpper === 'D')) {
     const answerIndex = input.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
     const selectedOption = currentQuiz.options[answerIndex];
     
@@ -266,14 +468,14 @@ rl.on('line', (line) => {
         }
       }));
       
-      addMessage(`Answered: ${input}. ${selectedOption}`, 'you');
+      addMessage(`Answered: ${inputUpper}. ${selectedOption}`, 'you');
       clearQuiz();
     } else {
       addMessage('Not connected to educator', 'system');
     }
-  } else if (currentQuiz && input !== 'A' && input !== 'B' && input !== 'C' && input !== 'D') {
+  } else if (currentQuiz && inputUpper !== 'A' && inputUpper !== 'B' && inputUpper !== 'C' && inputUpper !== 'D' && inputUpper !== '/HINT' && inputUpper !== 'HINT') {
     // User typed something else while quiz is active
-    addMessage('Please answer the quiz first (A, B, C, or D)', 'system');
+    addMessage('Please answer the quiz (A, B, C, or D) or type /hint for a hint', 'system');
   } else {
     // Regular message
     if (ws && ws.readyState === WebSocket.OPEN) {
