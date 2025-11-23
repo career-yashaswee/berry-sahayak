@@ -53,8 +53,10 @@ const wss = new WebSocketServer({ server });
 let client = null;
 let messageList = [];
 let status = 'Waiting for connection...';
+let isGeneratingQuiz = false;
 let addMessageCallback = null;
 let updateStatusCallback = null;
+let updateLoadingCallback = null;
 
 // Function to add message to display
 function addMessage(text, type = 'info') {
@@ -81,6 +83,14 @@ function updateStatus(newStatus) {
   status = newStatus;
   if (updateStatusCallback) {
     updateStatusCallback();
+  }
+}
+
+// Update loading state
+function setGeneratingQuiz(generating) {
+  isGeneratingQuiz = generating;
+  if (updateLoadingCallback) {
+    updateLoadingCallback();
   }
 }
 
@@ -125,6 +135,10 @@ Where "correct" is the index (0-3) of the correct answer. Return ONLY the JSON, 
           const jsonMatch = responseText.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             const quiz = JSON.parse(jsonMatch[0]);
+            // Ensure options are strings
+            if (quiz.options && Array.isArray(quiz.options)) {
+              quiz.options = quiz.options.map(opt => String(opt));
+            }
             resolve(quiz);
           } else {
             resolve(createFallbackQuiz(topic));
@@ -156,6 +170,10 @@ function tryCommandLine(prompt, topic, resolve, reject) {
       const jsonMatch = stdout.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const quiz = JSON.parse(jsonMatch[0]);
+        // Ensure options are strings
+        if (quiz.options && Array.isArray(quiz.options)) {
+          quiz.options = quiz.options.map(opt => String(opt));
+        }
         resolve(quiz);
       } else {
         resolve(createFallbackQuiz(topic));
@@ -187,11 +205,25 @@ function App() {
   React.useEffect(() => {
     addMessageCallback = () => forceUpdate();
     updateStatusCallback = () => forceUpdate();
+    updateLoadingCallback = () => forceUpdate();
     return () => {
       addMessageCallback = null;
       updateStatusCallback = null;
+      updateLoadingCallback = null;
     };
   }, []);
+
+  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  const [spinnerIndex, setSpinnerIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    if (isGeneratingQuiz) {
+      const interval = setInterval(() => {
+        setSpinnerIndex(prev => (prev + 1) % spinnerFrames.length);
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [isGeneratingQuiz]);
 
   return React.createElement(Box, { flexDirection: 'column' },
     React.createElement(Box, { backgroundColor: 'blue', paddingX: 1, paddingY: 0 },
@@ -202,7 +234,12 @@ function App() {
     React.createElement(Box, { flexDirection: 'column', height: 20, borderStyle: 'single', paddingX: 1 },
       messageList.slice(-20).map((msg, i) =>
         React.createElement(Text, { key: i }, msg)
-      )
+      ),
+      isGeneratingQuiz ? React.createElement(Box, { marginTop: 1 },
+        React.createElement(Text, { color: 'cyan' },
+          `${spinnerFrames[spinnerIndex]} Generating quiz...`
+        )
+      ) : null
     ),
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { color: 'yellow' },
@@ -239,13 +276,16 @@ rl.on('line', async (line) => {
         return;
       }
       
+      setGeneratingQuiz(true);
       addMessage(`Generating quiz: ${topic}...`, 'system');
       
       try {
         const quiz = await generateQuiz(topic);
+        setGeneratingQuiz(false);
         client.send(JSON.stringify({ type: 'quiz', data: quiz }));
         addMessage(`Quiz sent: ${quiz.question}`, 'system');
       } catch (error) {
+        setGeneratingQuiz(false);
         addMessage(`Error generating quiz: ${error.message}`, 'system');
       }
     } else {

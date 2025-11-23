@@ -96,9 +96,10 @@ function QuizDisplay({ quiz }) {
     ),
     quiz.options.map((option, i) => {
       const letter = String.fromCharCode(65 + i);
+      const optionText = typeof option === 'string' ? option : String(option);
       return React.createElement(Box, { key: i, marginY: 0.5 },
         React.createElement(Text, { color: 'white' },
-          `${letter}. ${option}`
+          `${letter}. ${optionText}`
         )
       );
     }),
