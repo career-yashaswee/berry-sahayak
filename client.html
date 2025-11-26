@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Client</title>
+    <title>Sahayak - Learner Mode</title>
     <style>
         * {
             margin: 0;
@@ -12,20 +12,27 @@
         }
         body {
             font-family: Arial, sans-serif;
-            padding: 20px;
-            background: #f5f5f5;
+            padding: 10px;
+            background: #1a1a1a;
+            color: #fff;
         }
         .container {
-            max-width: 500px;
+            max-width: 600px;
             margin: 0 auto;
-            background: white;
-            padding: 20px;
+            background: #000;
+            padding: 15px;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        h1 {
-            margin-bottom: 20px;
-            color: #333;
+        .header {
+            background: #0066cc;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .header.disconnected {
+            background: #cc0000;
         }
         .connect-section {
             margin-bottom: 20px;
@@ -34,14 +41,16 @@
             width: 100%;
             padding: 12px;
             margin-bottom: 10px;
-            border: 1px solid #ddd;
+            border: 1px solid #444;
             border-radius: 4px;
             font-size: 16px;
+            background: #222;
+            color: #fff;
         }
         button {
             width: 100%;
             padding: 12px;
-            background: #007bff;
+            background: #0066cc;
             color: white;
             border: none;
             border-radius: 4px;
@@ -49,46 +58,52 @@
             cursor: pointer;
         }
         button:hover {
-            background: #0056b3;
+            background: #0052a3;
         }
         button:disabled {
-            background: #ccc;
+            background: #444;
             cursor: not-allowed;
         }
-        .status {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-            text-align: center;
+        .reconnect-btn {
+            background: #cc0000;
+            margin-top: 10px;
         }
-        .status.connected {
-            background: #d4edda;
-            color: #155724;
-        }
-        .status.disconnected {
-            background: #f8d7da;
-            color: #721c24;
+        .reconnect-btn:hover {
+            background: #aa0000;
         }
         .messages {
-            height: 300px;
+            height: 400px;
             overflow-y: auto;
-            border: 1px solid #ddd;
+            border: 1px solid #444;
             padding: 10px;
-            margin: 20px 0;
-            background: #f9f9f9;
+            margin: 10px 0;
+            background: #111;
             border-radius: 4px;
         }
         .message {
-            margin: 5px 0;
-            padding: 8px;
-            background: white;
+            margin: 8px 0;
+            padding: 8px 12px;
             border-radius: 4px;
+            max-width: 70%;
+            word-wrap: break-word;
         }
         .message.you {
-            background: #e3f2fd;
+            background: #0066cc;
+            margin-left: auto;
+            text-align: right;
         }
-        .message.server {
-            background: #fff3e0;
+        .message.educator {
+            background: #666;
+            margin-right: auto;
+        }
+        .message.system {
+            background: #ffcc00;
+            color: #000;
+            text-align: center;
+            margin: 8px auto;
+            max-width: 90%;
+            font-weight: bold;
+            font-size: 14px;
         }
         .send-section {
             display: none;
@@ -96,66 +111,162 @@
         .send-section.active {
             display: block;
         }
-        .quiz {
-            margin: 10px 0;
+        .quiz-container {
+            margin: 15px 0;
             padding: 15px;
-            background: #e8f5e9;
-            border: 2px solid #4caf50;
+            background: #001122;
+            border: 2px solid #00ffff;
             border-radius: 8px;
         }
         .quiz-question {
             font-weight: bold;
             margin-bottom: 15px;
-            color: #2e7d32;
+            color: #ffff00;
             font-size: 18px;
         }
         .quiz-option {
             margin: 8px 0;
-            padding: 10px;
-            background: white;
-            border: 1px solid #ddd;
+            padding: 12px;
+            background: #222;
+            border: 1px solid #444;
             border-radius: 4px;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s;
+            color: #fff;
         }
         .quiz-option:hover {
-            background: #f0f0f0;
+            background: #333;
+            border-color: #00ffff;
         }
-        .quiz-option.selected {
-            background: #bbdefb;
-            border-color: #2196f3;
+        .quiz-option.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .hint-container {
+            margin: 10px 0;
+            border: 1px solid #0066cc;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .hint-header {
+            background: #0066cc;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #fff;
+        }
+        .hint-content {
+            padding: 10px;
+            background: #000;
+            color: #fff;
+            display: none;
+        }
+        .hint-content.expanded {
+            display: block;
+        }
+        .feedback {
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .feedback.correct {
+            background: #00cc00;
+            color: #fff;
+        }
+        .feedback.incorrect {
+            background: #cc0000;
+            color: #fff;
+        }
+        .input-section {
+            margin-top: 10px;
+        }
+        .input-hint {
+            color: #00ffff;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .input-hint.disconnected {
+            color: #cc0000;
+        }
+        .doubt-container {
+            margin: 15px 0;
+            padding: 15px;
+            background: #220022;
+            border: 2px solid #ff00ff;
+            border-radius: 8px;
+        }
+        .doubt-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ff00ff;
+            font-size: 18px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>WebSocket Client</h1>
+        <div class="header" id="header">Sahayak - Learner Mode | Status: Disconnected</div>
         
         <div class="connect-section" id="connectSection">
-            <input type="text" id="ipInput" placeholder="Enter server IP (e.g., 192.168.1.100)" value="">
+            <input type="text" id="ipInput" placeholder="Enter educator IP (e.g., 192.168.1.100)" value="">
             <button id="connectBtn" onclick="connect()">Connect</button>
         </div>
         
-        <div class="status disconnected" id="status">Disconnected</div>
-        
         <div class="send-section" id="sendSection">
             <div class="messages" id="messages"></div>
-            <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
-            <button id="sendBtn" onclick="sendMessage()" style="margin-top: 10px;">Send</button>
-            <button onclick="disconnect()" style="margin-top: 10px; background: #dc3545;">Disconnect</button>
+            
+            <div id="quizContainer"></div>
+            <div id="doubtContainer"></div>
+            
+            <div class="input-section">
+                <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+                <div class="input-hint" id="inputHint">Type your message and press Enter to send</div>
+            </div>
+            
+            <button onclick="disconnect()" style="margin-top: 10px; background: #cc0000;">Disconnect</button>
+        </div>
+        
+        <div id="reconnectSection" style="display: none;">
+            <div class="quiz-container" style="border-color: #cc0000;">
+                <div style="text-align: center; color: #cc0000; font-weight: bold; margin-bottom: 10px;">
+                    Disconnected from Educator
+                </div>
+                <button class="reconnect-btn" onclick="connect()">Reconnect</button>
+            </div>
         </div>
     </div>
 
     <script>
         let ws = null;
+        let currentQuiz = null;
+        let quizHint = null;
+        let hintExpanded = false;
+        let answerFeedback = null;
+        let isGeneratingHint = false;
+        let educatorIP = '';
+        let isDoubtActive = false;
+
+        function getRelativeTime(timestamp) {
+            const now = Date.now();
+            const diff = now - timestamp;
+            const seconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            
+            if (seconds < 60) return `${seconds}s ago`;
+            if (minutes < 60) return `${minutes}m ago`;
+            return `${hours}h ago`;
+        }
 
         function connect() {
             const ip = document.getElementById('ipInput').value.trim();
             if (!ip) {
-                alert('Please enter server IP address');
+                alert('Please enter educator IP address');
                 return;
             }
 
+            educatorIP = ip;
             const url = `ws://${ip}:8080`;
             
             try {
@@ -165,7 +276,8 @@
                     updateStatus(true);
                     document.getElementById('connectSection').style.display = 'none';
                     document.getElementById('sendSection').classList.add('active');
-                    addMessage('Connected to server', 'server');
+                    document.getElementById('reconnectSection').style.display = 'none';
+                    addMessage('Connected to educator', 'system');
                 };
                 
                 ws.onmessage = (event) => {
@@ -173,12 +285,29 @@
                         const data = JSON.parse(event.data);
                         if (data.type === 'quiz') {
                             displayQuiz(data.data);
+                            answerFeedback = null;
+                            quizHint = null;
+                            hintExpanded = false;
+                            isDoubtActive = false;
+                            displayDoubt(false);
                         } else if (data.type === 'message') {
-                            addMessage(data.data, 'server');
+                            addMessage(data.data, 'educator');
+                        } else if (data.type === 'quiz_feedback') {
+                            displayFeedback(data.data);
+                        } else if (data.type === 'doubt') {
+                            if (data.data && data.data.active) {
+                                isDoubtActive = true;
+                                displayDoubt(true);
+                                currentQuiz = null;
+                                document.getElementById('quizContainer').innerHTML = '';
+                                addMessage('Doubt collection started. Type your doubt and press Enter.', 'system');
+                            } else {
+                                isDoubtActive = false;
+                                displayDoubt(false);
+                            }
                         }
                     } catch (e) {
-                        // Legacy: plain text message
-                        addMessage(event.data, 'server');
+                        addMessage(event.data, 'educator');
                     }
                 };
                 
@@ -186,7 +315,8 @@
                     updateStatus(false);
                     document.getElementById('connectSection').style.display = 'block';
                     document.getElementById('sendSection').classList.remove('active');
-                    addMessage('Disconnected from server', 'server');
+                    document.getElementById('reconnectSection').style.display = 'block';
+                    addMessage('Disconnected from educator', 'system');
                 };
                 
                 ws.onerror = (error) => {
@@ -209,11 +339,75 @@
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
             
-            if (message && ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(message);
-                addMessage(message, 'you');
-                input.value = '';
+            if (!message || !ws || ws.readyState !== WebSocket.OPEN) {
+                return;
             }
+
+            // Handle hint command
+            if (message.toLowerCase() === '/hint' && currentQuiz) {
+                if (answerFeedback) {
+                    addMessage('You have already answered this quiz', 'system');
+                    input.value = '';
+                    return;
+                }
+                generateHint(currentQuiz.question);
+                input.value = '';
+                return;
+            }
+
+            // Handle toggle hint command
+            if (message.toLowerCase() === 'toggle' && currentQuiz && quizHint) {
+                toggleHint();
+                input.value = '';
+                return;
+            }
+
+            // Handle doubt submission
+            if (isDoubtActive && message) {
+                if (!message.trim()) {
+                    addMessage('Please enter a valid doubt', 'system');
+                    input.value = '';
+                    return;
+                }
+                
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'doubt_submission',
+                        data: {
+                            text: message,
+                            timestamp: Date.now()
+                        }
+                    }));
+                    
+                    addMessage(`Doubt submitted: ${message}`, 'you');
+                    isDoubtActive = false;
+                    displayDoubt(false);
+                    addMessage('Doubt submitted successfully!', 'system');
+                }
+                input.value = '';
+                return;
+            }
+
+            // Handle quiz answer
+            if (currentQuiz && (message.toUpperCase() === 'A' || message.toUpperCase() === 'B' || 
+                message.toUpperCase() === 'C' || message.toUpperCase() === 'D')) {
+                if (answerFeedback) {
+                    addMessage('You have already answered this quiz', 'system');
+                    input.value = '';
+                    return;
+                }
+                answerQuiz(message.toUpperCase());
+                input.value = '';
+                return;
+            }
+
+            // Regular message
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'message', data: message }));
+                addMessage(message, 'you');
+            }
+            
+            input.value = '';
         }
 
         function handleKeyPress(event) {
@@ -226,51 +420,223 @@
             const messages = document.getElementById('messages');
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}`;
-            messageDiv.textContent = text;
+            
+            if (type === 'system') {
+                const timestamp = Date.now();
+                messageDiv.textContent = `${text} (${getRelativeTime(timestamp)})`;
+            } else {
+                messageDiv.textContent = type === 'you' ? text : `Educator: ${text}`;
+            }
+            
             messages.appendChild(messageDiv);
             messages.scrollTop = messages.scrollHeight;
         }
 
         function updateStatus(connected) {
-            const status = document.getElementById('status');
+            const header = document.getElementById('header');
+            const inputHint = document.getElementById('inputHint');
+            
             if (connected) {
-                status.textContent = 'Connected';
-                status.className = 'status connected';
+                header.textContent = `Sahayak - Learner Mode | Connected to: ${educatorIP}:8080 | Status: Connected`;
+                header.className = 'header';
+                if (currentQuiz) {
+                    inputHint.textContent = 'Type A, B, C, or D to answer the quiz | Type /hint for a hint';
+                } else if (isDoubtActive) {
+                    inputHint.textContent = 'Type your doubt and press Enter to submit';
+                    inputHint.style.color = '#ff00ff';
+                } else {
+                    inputHint.textContent = 'Type your message and press Enter to send';
+                    inputHint.style.color = '#00ffff';
+                }
+                inputHint.className = 'input-hint';
             } else {
-                status.textContent = 'Disconnected';
-                status.className = 'status disconnected';
+                header.textContent = 'Sahayak - Learner Mode | Status: Disconnected';
+                header.className = 'header disconnected';
+                inputHint.textContent = 'Type "reconnect" to reconnect to educator';
+                inputHint.className = 'input-hint disconnected';
             }
         }
 
         function displayQuiz(quiz) {
-            const messages = document.getElementById('messages');
+            currentQuiz = quiz;
+            currentQuiz.startTime = Date.now();
+            const container = document.getElementById('quizContainer');
+            container.innerHTML = '';
+            
             const quizDiv = document.createElement('div');
-            quizDiv.className = 'quiz';
+            quizDiv.className = 'quiz-container';
+            quizDiv.id = 'quizDisplay';
             
             const questionDiv = document.createElement('div');
             questionDiv.className = 'quiz-question';
-            questionDiv.textContent = quiz.question;
+            questionDiv.textContent = `QUIZ: ${quiz.question}`;
             quizDiv.appendChild(questionDiv);
             
+            // Hint section (initially hidden)
+            const hintDiv = document.createElement('div');
+            hintDiv.className = 'hint-container';
+            hintDiv.id = 'hintContainer';
+            hintDiv.style.display = 'none';
+            hintDiv.innerHTML = `
+                <div class="hint-header" onclick="toggleHint()">HINT [${hintExpanded ? '-' : '+'}]</div>
+                <div class="hint-content ${hintExpanded ? 'expanded' : ''}" id="hintContent"></div>
+            `;
+            quizDiv.appendChild(hintDiv);
+            
+            // Feedback section
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.id = 'feedbackContainer';
+            quizDiv.appendChild(feedbackDiv);
+            
+            // Options
+            const optionsDiv = document.createElement('div');
             quiz.options.forEach((option, index) => {
                 const optionDiv = document.createElement('div');
                 optionDiv.className = 'quiz-option';
                 optionDiv.textContent = `${String.fromCharCode(65 + index)}. ${option}`;
                 optionDiv.onclick = function() {
-                    // Remove selected class from all options
-                    quizDiv.querySelectorAll('.quiz-option').forEach(opt => {
-                        opt.classList.remove('selected');
-                    });
-                    // Add selected class to clicked option
-                    this.classList.add('selected');
+                    if (answerFeedback) return;
+                    answerQuiz(String.fromCharCode(65 + index));
                 };
-                quizDiv.appendChild(optionDiv);
+                optionsDiv.appendChild(optionDiv);
             });
+            quizDiv.appendChild(optionsDiv);
             
-            messages.appendChild(quizDiv);
-            messages.scrollTop = messages.scrollHeight;
+            container.appendChild(quizDiv);
+            updateStatus(true);
+        }
+
+        function toggleHint() {
+            if (!quizHint) return;
+            hintExpanded = !hintExpanded;
+            const hintContent = document.getElementById('hintContent');
+            const hintHeader = document.querySelector('.hint-header');
+            if (hintContent) {
+                hintContent.className = `hint-content ${hintExpanded ? 'expanded' : ''}`;
+                hintContent.textContent = quizHint;
+            }
+            if (hintHeader) {
+                hintHeader.textContent = `HINT [${hintExpanded ? '-' : '+'}]`;
+            }
+        }
+
+        function generateHint(question) {
+            isGeneratingHint = true;
+            const hintContainer = document.getElementById('hintContainer');
+            if (hintContainer) {
+                hintContainer.style.display = 'block';
+                const hintContent = document.getElementById('hintContent');
+                if (hintContent) {
+                    hintContent.textContent = 'Generating hint...';
+                    hintContent.className = 'hint-content expanded';
+                }
+            }
+
+            // Call Ollama API for hint
+            fetch('http://localhost:11434/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'tinyllama',
+                    prompt: `Question: "${question}"\n\nProvide a Socratic reasoning hint for this question. A Socratic hint should:\n- Guide the learner to think through the problem\n- Ask leading questions rather than giving direct answers\n- Help them reason through the concepts\n- Be concise (2-3 sentences)\n\nProvide only the hint, no additional explanation.`,
+                    stream: false
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                quizHint = (data.response || 'Think about the key concepts in the question.').trim();
+                hintExpanded = true;
+                const hintContent = document.getElementById('hintContent');
+                const hintHeader = document.querySelector('.hint-header');
+                if (hintContent) {
+                    hintContent.textContent = quizHint;
+                    hintContent.className = 'hint-content expanded';
+                }
+                if (hintHeader) {
+                    hintHeader.textContent = 'HINT [-]';
+                }
+                isGeneratingHint = false;
+            })
+            .catch(error => {
+                quizHint = 'Think about the key concepts in the question.';
+                hintExpanded = true;
+                const hintContent = document.getElementById('hintContent');
+                if (hintContent) {
+                    hintContent.textContent = quizHint;
+                    hintContent.className = 'hint-content expanded';
+                }
+                isGeneratingHint = false;
+            });
+        }
+
+        function answerQuiz(answer) {
+            if (!currentQuiz || answerFeedback) return;
+            
+            const answerIndex = answer.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
+            const selectedOption = currentQuiz.options[answerIndex];
+            const answerTime = Date.now();
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'quiz_answer',
+                    data: {
+                        question: currentQuiz.question,
+                        answer: answer,
+                        answerIndex: answerIndex,
+                        selectedOption: selectedOption,
+                        timestamp: answerTime,
+                        quizStartTime: currentQuiz.startTime || answerTime
+                    }
+                }));
+                
+                addMessage(`Answered: ${answer}. ${selectedOption}`, 'you');
+                
+                // Disable options
+                document.querySelectorAll('.quiz-option').forEach(opt => {
+                    opt.classList.add('disabled');
+                    opt.style.cursor = 'not-allowed';
+                });
+            }
+        }
+
+        function displayFeedback(feedback) {
+            answerFeedback = feedback;
+            const feedbackContainer = document.getElementById('feedbackContainer');
+            if (feedbackContainer) {
+                feedbackContainer.innerHTML = '';
+                const feedbackDiv = document.createElement('div');
+                feedbackDiv.className = `feedback ${feedback.correct ? 'correct' : 'incorrect'}`;
+                feedbackDiv.innerHTML = `
+                    <div>${feedback.correct ? '✓ Correct!' : '✗ Incorrect'}</div>
+                    <div style="margin-top: 5px; font-size: 14px;">${feedback.message}</div>
+                `;
+                feedbackContainer.appendChild(feedbackDiv);
+            }
+            
+            // Update input hint
+            const inputHint = document.getElementById('inputHint');
+            if (inputHint) {
+                inputHint.textContent = 'Quiz completed!';
+            }
+        }
+
+        function displayDoubt(active) {
+            const container = document.getElementById('doubtContainer');
+            if (!container) return;
+            
+            if (active) {
+                container.innerHTML = `
+                    <div class="doubt-container">
+                        <div class="doubt-title">DOUBT COLLECTION ACTIVE</div>
+                        <div style="color: #fff; margin-top: 10px;">
+                            Type your doubt and press Enter to submit
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = '';
+            }
         }
     </script>
 </body>
 </html>
-

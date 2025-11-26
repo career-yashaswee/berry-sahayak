@@ -62,6 +62,13 @@ let addMessageCallback = null;
 let updateStatusCallback = null;
 let updateLoadingCallback = null;
 let updateStatisticsCallback = null;
+let isDoubtActive = false;
+let doubtCollection = [];
+let topDoubts = null;
+let showTopDoubts = false;
+let isProcessingDoubts = false;
+let doubtCollectionTimeout = null;
+let updateDoubtsCallback = null;
 
 // Function to get relative time
 function getRelativeTime(timestamp) {
@@ -124,13 +131,30 @@ function closeStatistics() {
   updateStatisticsDisplay();
 }
 
+// Close top doubts display
+function closeTopDoubts() {
+  showTopDoubts = false;
+  topDoubts = null;
+  if (updateDoubtsCallback) {
+    updateDoubtsCallback();
+  }
+}
+
+// Update doubts display
+function updateDoubtsDisplay() {
+  if (updateDoubtsCallback) {
+    updateDoubtsCallback();
+  }
+}
+
 // Calculate statistics
 function calculateStatistics() {
   if (!quizStatistics || !currentQuiz) {
     return {
       totalAnswered: 0,
       averageScore: 0,
-      avgResponseTime: 0
+      avgResponseTime: 0,
+      hintsUsed: 0
     };
   }
 
@@ -139,13 +163,14 @@ function calculateStatistics() {
     return {
       totalAnswered: 0,
       averageScore: 0,
-      avgResponseTime: 0
+      avgResponseTime: 0,
+      hintsUsed: quizStatistics.hintsUsed || 0
     };
   }
 
   const totalAnswered = answers.length;
-  const correctCount = answers.filter(a => a.correct).length;
-  const averageScore = (correctCount / totalAnswered) * 100;
+  const correctCount = answers.filter(a => a.isCorrect).length;
+  const averageScore = totalAnswered > 0 ? (correctCount / totalAnswered) * 100 : 0;
   
   const responseTimes = answers.map(a => a.responseTime).filter(t => t > 0);
   const avgResponseTime = responseTimes.length > 0
@@ -155,7 +180,8 @@ function calculateStatistics() {
   return {
     totalAnswered,
     averageScore: Math.round(averageScore * 10) / 10,
-    avgResponseTime: Math.round(avgResponseTime / 1000) // Convert to seconds
+    avgResponseTime: Math.round(avgResponseTime / 1000 * 10) / 10, // Convert to seconds, round to 1 decimal
+    hintsUsed: quizStatistics.hintsUsed || 0
   };
 }
 
@@ -263,6 +289,144 @@ function createFallbackQuiz(topic) {
   };
 }
 
+// Process and summarize doubts using AI
+function processDoubts(doubts) {
+  return new Promise((resolve, reject) => {
+    if (doubts.length === 0) {
+      resolve([]);
+      return;
+    }
+
+    const doubtsList = doubts.map((d, i) => `${i + 1}. ${d.text}`).join('\n');
+    const prompt = `You are analyzing student doubts from a classroom. Below are the doubts submitted by students:
+
+${doubtsList}
+
+Your task:
+1. Analyze and understand each doubt
+2. Identify the most critical/common concerns
+3. Summarize and group similar doubts
+4. Return the top 3 most critical doubts that need immediate attention
+
+Format your response as JSON with this exact structure:
+{
+  "topDoubts": [
+    {
+      "summary": "Brief summary of the critical doubt",
+      "count": number of students with similar concern,
+      "details": "More detailed explanation"
+    },
+    {
+      "summary": "Second critical doubt",
+      "count": number,
+      "details": "Details"
+    },
+    {
+      "summary": "Third critical doubt",
+      "count": number,
+      "details": "Details"
+    }
+  ]
+}
+
+Return ONLY the JSON, no other text. If there are fewer than 3 unique critical doubts, return fewer items.`;
+
+    const postData = JSON.stringify({
+      model: OLLAMA_MODELS.EDUCATOR_MODEL,
+      prompt: prompt,
+      stream: false
+    });
+
+    const options = {
+      hostname: 'localhost',
+      port: 11434,
+      path: '/api/generate',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data);
+          const responseText = response.response || '';
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]);
+            resolve(result.topDoubts || []);
+          } else {
+            // Fallback: create simple summaries
+            resolve(createFallbackDoubts(doubts));
+          }
+        } catch (error) {
+          tryCommandLineDoubts(prompt, doubts, resolve, reject);
+        }
+      });
+    });
+
+    req.on('error', () => {
+      tryCommandLineDoubts(prompt, doubts, resolve, reject);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Fallback to command line for doubt processing
+function tryCommandLineDoubts(prompt, doubts, resolve, reject) {
+  exec(`ollama run ${FALLBACK_MODEL} "${prompt.replace(/"/g, '\\"')}"`, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    if (error) {
+      resolve(createFallbackDoubts(doubts));
+      return;
+    }
+    
+    try {
+      const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        resolve(result.topDoubts || []);
+      } else {
+        resolve(createFallbackDoubts(doubts));
+      }
+    } catch (parseError) {
+      resolve(createFallbackDoubts(doubts));
+    }
+  });
+}
+
+// Create fallback doubts summary
+function createFallbackDoubts(doubts) {
+  if (doubts.length === 0) return [];
+  
+  // Simple grouping by first few words
+  const grouped = {};
+  doubts.forEach(d => {
+    const key = d.text.substring(0, 30).toLowerCase();
+    if (!grouped[key]) {
+      grouped[key] = { text: d.text, count: 0 };
+    }
+    grouped[key].count++;
+  });
+
+  const sorted = Object.values(grouped)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3);
+
+  return sorted.map((item, i) => ({
+    summary: item.text.substring(0, 50) + (item.text.length > 50 ? '...' : ''),
+    count: item.count,
+    details: item.text
+  }));
+}
+
 // React App Component
 // Statistics Component
 function StatisticsComponent({ stats, onClose }) {
@@ -286,21 +450,108 @@ function StatisticsComponent({ stats, onClose }) {
         'Type "close stats" to close'
       )
     ),
-    React.createElement(Box, { marginY: 0.5 },
-      React.createElement(Text, { color: 'white' },
+    React.createElement(Box, { marginY: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true },
         `Total Students Answered: ${stats.totalAnswered}`
       )
     ),
-    React.createElement(Box, { marginY: 0.5 },
-      React.createElement(Text, { color: 'white' },
+    React.createElement(Box, { marginY: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true },
         `Class Average: ${stats.averageScore}%`
       )
     ),
-    React.createElement(Box, { marginY: 0.5 },
-      React.createElement(Text, { color: 'white' },
+    React.createElement(Box, { marginY: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true },
         `Average Response Time: ${stats.avgResponseTime}s`
       )
+    ),
+    React.createElement(Box, { marginY: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true },
+        `Hints Used: ${stats.hintsUsed}`
+      )
     )
+  );
+}
+
+// Top Doubts Component
+function TopDoubtsComponent({ doubts, onClose, isProcessing, spinnerIndex }) {
+  if (isProcessing) {
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    return React.createElement(Box, {
+      marginY: 1,
+      borderStyle: 'round',
+      borderColor: 'magenta',
+      paddingX: 1,
+      paddingY: 1,
+      backgroundColor: 'black'
+    },
+      React.createElement(Box, {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 1
+      },
+        React.createElement(Text, { color: 'magenta', bold: true },
+          'PROCESSING DOUBTS'
+        )
+      ),
+      React.createElement(Box, { marginY: 1 },
+        React.createElement(Text, { color: 'cyan' },
+          `${spinnerFrames[spinnerIndex || 0]} Filtering and summarizing doubts...`
+        )
+      ),
+      React.createElement(Box, { marginY: 0.5 },
+        React.createElement(Text, { color: 'white' },
+          'AI is analyzing and identifying the top 3 critical doubts'
+        )
+      )
+    );
+  }
+
+  if (!doubts || doubts.length === 0) {
+    return null;
+  }
+
+  return React.createElement(Box, {
+    marginY: 1,
+    borderStyle: 'round',
+    borderColor: 'magenta',
+    paddingX: 1,
+    paddingY: 1,
+    backgroundColor: 'black'
+  },
+    React.createElement(Box, {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 1
+    },
+      React.createElement(Text, { color: 'magenta', bold: true },
+        'TOP 3 CRITICAL DOUBTS'
+      ),
+      React.createElement(Text, { color: 'yellow' },
+        'Type "close doubts" to close'
+      )
+    ),
+    doubts.map((doubt, i) => {
+      return React.createElement(Box, {
+        key: i,
+        marginY: 1,
+        paddingX: 1,
+        paddingY: 0.5,
+        borderStyle: 'single',
+        borderColor: 'magenta'
+      },
+        React.createElement(Box, { marginBottom: 0.5 },
+          React.createElement(Text, { color: 'yellow', bold: true },
+            `${i + 1}. ${doubt.summary} (${doubt.count} student${doubt.count !== 1 ? 's' : ''})`
+          )
+        ),
+        React.createElement(Box,
+          React.createElement(Text, { color: 'white' },
+            doubt.details
+          )
+        )
+      );
+    })
   );
 }
 
@@ -312,11 +563,13 @@ function App() {
     updateStatusCallback = () => forceUpdate();
     updateLoadingCallback = () => forceUpdate();
     updateStatisticsCallback = () => forceUpdate();
+    updateDoubtsCallback = () => forceUpdate();
     return () => {
       addMessageCallback = null;
       updateStatusCallback = null;
       updateLoadingCallback = null;
       updateStatisticsCallback = null;
+      updateDoubtsCallback = null;
     };
   }, []);
 
@@ -336,6 +589,7 @@ function App() {
 
   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const [spinnerIndex, setSpinnerIndex] = React.useState(0);
+  const [doubtSpinnerIndex, setDoubtSpinnerIndex] = React.useState(0);
 
   React.useEffect(() => {
     if (isGeneratingQuiz) {
@@ -345,6 +599,15 @@ function App() {
       return () => clearInterval(interval);
     }
   }, [isGeneratingQuiz]);
+
+  React.useEffect(() => {
+    if (isProcessingDoubts) {
+      const interval = setInterval(() => {
+        setDoubtSpinnerIndex(prev => (prev + 1) % spinnerFrames.length);
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [isProcessingDoubts]);
 
   return React.createElement(Box, { flexDirection: 'column' },
     React.createElement(Box, { backgroundColor: 'blue', paddingX: 1, paddingY: 0 },
@@ -400,9 +663,15 @@ function App() {
       stats: stats,
       onClose: closeStatistics
     }) : null,
+    showTopDoubts ? React.createElement(TopDoubtsComponent, {
+      doubts: topDoubts,
+      onClose: closeTopDoubts,
+      isProcessing: isProcessingDoubts,
+      spinnerIndex: doubtSpinnerIndex
+    }) : null,
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { color: 'yellow' },
-        'Send message | Press Enter to Send | Type /quiz [topic] for quiz | Type "close stats" to close statistics'
+        'Send message | Press Enter to Send | Type /quiz [topic] for quiz | Type /doubt to collect doubts | Type "close stats" to close statistics | Type "close doubts" to close doubts'
       )
     )
   );
@@ -423,6 +692,48 @@ rl.on('line', async (line) => {
     // Check if it's a close stats command
     if (message.toLowerCase() === 'close stats' || message.toLowerCase() === '/close stats') {
       closeStatistics();
+      rl.prompt();
+      return;
+    }
+    
+    // Check if it's a close doubts command
+    if (message.toLowerCase() === 'close doubts' || message.toLowerCase() === '/close doubts') {
+      closeTopDoubts();
+      rl.prompt();
+      return;
+    }
+    
+    // Check if it's a /doubt command
+    if (message.startsWith('/doubt')) {
+      if (!client || client.readyState !== WebSocket.OPEN) {
+        addMessage('No learner connected', 'system');
+        rl.prompt();
+        return;
+      }
+      
+      // Initialize doubt collection
+      isDoubtActive = true;
+      doubtCollection = [];
+      topDoubts = null;
+      showTopDoubts = false;
+      
+      // Send doubt request to learner
+      client.send(JSON.stringify({ type: 'doubt', data: { active: true } }));
+      addMessage('Doubt collection started. Waiting for learner submissions...', 'system');
+      
+      // Set timeout to process doubts after 2 minutes
+      if (doubtCollectionTimeout) {
+        clearTimeout(doubtCollectionTimeout);
+      }
+      doubtCollectionTimeout = setTimeout(async () => {
+        if (doubtCollection.length > 0) {
+          await processAndDisplayDoubts();
+        } else {
+          addMessage('No doubts received from learners', 'system');
+          isDoubtActive = false;
+        }
+      }, 120000); // 2 minutes timeout
+      
       rl.prompt();
       return;
     }
@@ -452,6 +763,7 @@ rl.on('line', async (line) => {
         currentQuiz = quiz;
         quizStatistics = {
           answers: [],
+          hintsUsed: 0,
           startTime: Date.now()
         };
         showStatistics = true;
@@ -501,14 +813,87 @@ wss.on('connection', (ws) => {
   updateStatus('Connected');
   addMessage('Learner connected', 'system');
   
-  ws.on('message', (message) => {
+      ws.on('message', (message) => {
     try {
       const data = JSON.parse(message.toString());
       if (data.type === 'message') {
         addMessage(data.data, 'learner');
+      } else if (data.type === 'doubt_submission') {
+        const doubt = data.data;
+        
+        if (!isDoubtActive) {
+          addMessage('Doubt collection not active. Teacher must send /doubt command first.', 'system');
+          return;
+        }
+        
+        // Add doubt to collection
+        doubtCollection.push({
+          text: doubt.text,
+          timestamp: doubt.timestamp || Date.now()
+        });
+        
+        addMessage(`Doubt received: ${doubt.text.substring(0, 50)}${doubt.text.length > 50 ? '...' : ''}`, 'system');
+        
+        // Reset timeout to 2 minutes after last submission
+        if (doubtCollectionTimeout) {
+          clearTimeout(doubtCollectionTimeout);
+        }
+        doubtCollectionTimeout = setTimeout(async () => {
+          if (doubtCollection.length > 0) {
+            await processAndDisplayDoubts();
+          }
+        }, 120000); // 2 minutes after last submission
       } else if (data.type === 'quiz_answer') {
         const answer = data.data;
-        addMessage(`Quiz Answer: ${answer.answer}. ${answer.selectedOption}`, 'learner');
+        
+        // Check if there's an active quiz
+        if (!currentQuiz || !quizStatistics) {
+          addMessage('No active quiz', 'system');
+          return;
+        }
+        
+        // Check if answer is correct
+        const isCorrect = answer.answerIndex === currentQuiz.correct;
+        
+        // Calculate response time
+        const responseTime = answer.timestamp - (answer.quizStartTime || quizStatistics.startTime);
+        
+        // Update statistics
+        quizStatistics.answers.push({
+          answer: answer.answer,
+          answerIndex: answer.answerIndex,
+          isCorrect: isCorrect,
+          responseTime: responseTime,
+          timestamp: answer.timestamp,
+          hintsUsed: answer.hintsUsed || 0
+        });
+        
+        // Update statistics display
+        updateStatisticsDisplay();
+      } else if (data.type === 'hint_request') {
+        // Track hint usage
+        if (quizStatistics && currentQuiz) {
+          quizStatistics.hintsUsed = (quizStatistics.hintsUsed || 0) + 1;
+          updateStatisticsDisplay();
+        }
+        
+        // Send feedback to learner
+        const correctOption = String.fromCharCode(65 + currentQuiz.correct); // A, B, C, or D
+        const correctText = currentQuiz.options[currentQuiz.correct];
+        const isCorrect = answer.answerIndex === currentQuiz.correct;
+        
+        ws.send(JSON.stringify({
+          type: 'quiz_feedback',
+          data: {
+            correct: isCorrect,
+            message: isCorrect 
+              ? 'Correct answer!' 
+              : `Wrong answer. The correct answer is ${correctOption}. ${correctText}`
+          }
+        }));
+        
+        // Show message on educator side
+        addMessage(`Quiz Answer: ${answer.answer}. ${answer.selectedOption} - ${isCorrect ? 'CORRECT' : 'WRONG'}`, 'learner');
       }
     } catch (e) {
       const text = message.toString();
@@ -534,6 +919,41 @@ render(React.createElement(App), {
   exitOnCtrlC: false,
   patchConsole: false
 });
+
+// Process and display doubts
+async function processAndDisplayDoubts() {
+  if (doubtCollection.length === 0) {
+    isDoubtActive = false;
+    return;
+  }
+  
+  isDoubtActive = false;
+  isProcessingDoubts = true;
+  showTopDoubts = true; // Show component immediately with loading state
+  topDoubts = null; // Clear previous results
+  updateDoubtsDisplay();
+  
+  addMessage(`Processing ${doubtCollection.length} doubt(s)...`, 'system');
+  
+  try {
+    const processed = await processDoubts(doubtCollection);
+    topDoubts = processed;
+    showTopDoubts = true;
+    isProcessingDoubts = false;
+    updateDoubtsDisplay();
+    addMessage(`Top ${Math.min(3, processed.length)} critical doubts identified`, 'system');
+  } catch (error) {
+    isProcessingDoubts = false;
+    addMessage(`Error processing doubts: ${error.message}`, 'system');
+    updateDoubtsDisplay();
+  }
+  
+  // Clear timeout
+  if (doubtCollectionTimeout) {
+    clearTimeout(doubtCollectionTimeout);
+    doubtCollectionTimeout = null;
+  }
+}
 
 // Start readline prompt
 setTimeout(() => {

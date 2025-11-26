@@ -29,10 +29,14 @@ let quizHint = null;
 let isGeneratingHint = false;
 let hintExpanded = false;
 let answerFeedback = null;
+let hintsUsedByLearner = 0;
 let addMessageCallback = null;
 let updateStatusCallback = null;
 let updateQuizCallback = null;
 let updateHintCallback = null;
+let currentDoubt = null;
+let isDoubtActive = false;
+let updateDoubtCallback = null;
 
 // Function to get relative time
 function getRelativeTime(timestamp) {
@@ -77,6 +81,7 @@ function updateStatus(newStatus) {
 // Set current quiz
 function setQuiz(quiz) {
   currentQuiz = quiz;
+  hintsUsedByLearner = 0; // Reset hint count for new quiz
   if (updateQuizCallback) {
     updateQuizCallback();
   }
@@ -88,6 +93,7 @@ function clearQuiz() {
   quizHint = null;
   hintExpanded = false;
   answerFeedback = null;
+  hintsUsedByLearner = 0;
   if (updateQuizCallback) {
     updateQuizCallback();
   }
@@ -125,6 +131,28 @@ function setGeneratingHint(generating) {
   isGeneratingHint = generating;
   if (updateHintCallback) {
     updateHintCallback();
+  }
+}
+
+// Set current doubt state
+function setDoubt(active) {
+  isDoubtActive = active;
+  if (active) {
+    currentDoubt = '';
+  } else {
+    currentDoubt = null;
+  }
+  if (updateDoubtCallback) {
+    updateDoubtCallback();
+  }
+}
+
+// Clear doubt
+function clearDoubt() {
+  isDoubtActive = false;
+  currentDoubt = null;
+  if (updateDoubtCallback) {
+    updateDoubtCallback();
   }
 }
 
@@ -295,6 +323,36 @@ function QuizDisplay({ quiz, hint, isGenerating, hintExpanded, onToggleHint, fee
   );
 }
 
+// Doubt Component
+function DoubtDisplay({ isActive }) {
+  if (!isActive) return null;
+
+  return React.createElement(Box, {
+    borderStyle: 'round',
+    borderColor: 'magenta',
+    paddingX: 1,
+    paddingY: 1,
+    marginY: 1,
+    backgroundColor: 'black'
+  },
+    React.createElement(Box, { marginBottom: 1 },
+      React.createElement(Text, { color: 'magenta', bold: true },
+        'DOUBT COLLECTION ACTIVE'
+      )
+    ),
+    React.createElement(Box, { marginY: 1 },
+      React.createElement(Text, { color: 'white' },
+        'Type your doubt and press Enter to submit'
+      )
+    ),
+    React.createElement(Box, { marginTop: 1 },
+      React.createElement(Text, { color: 'cyan' },
+        'Enter your doubt below and press Enter to submit'
+      )
+    )
+  );
+}
+
 // Reconnect Button Component
 function ReconnectButton({ onReconnect }) {
   return React.createElement(Box, {
@@ -327,11 +385,13 @@ function App() {
     updateStatusCallback = () => forceUpdate();
     updateQuizCallback = () => forceUpdate();
     updateHintCallback = () => forceUpdate();
+    updateDoubtCallback = () => forceUpdate();
     return () => {
       addMessageCallback = null;
       updateStatusCallback = null;
       updateQuizCallback = null;
       updateHintCallback = null;
+      updateDoubtCallback = null;
     };
   }, []);
 
@@ -343,7 +403,7 @@ function App() {
         `Sahayak - Learner Mode | Connected to: ${educatorIP}:${PORT} | Status: ${status}`
       )
     ),
-    React.createElement(Box, { flexDirection: 'column', height: currentQuiz ? 15 : 20, borderStyle: 'single', paddingX: 1 },
+    React.createElement(Box, { flexDirection: 'column', height: (currentQuiz || isDoubtActive) ? 15 : 20, borderStyle: 'single', paddingX: 1 },
       messageList.slice(-20).map((msg, i) => {
         if (msg.type === 'system') {
           return React.createElement(Box, { key: i, justifyContent: 'center', marginY: 0.5 },
@@ -390,10 +450,14 @@ function App() {
       onToggleHint: toggleHint,
       feedback: answerFeedback
     }) : null,
+    isDoubtActive ? React.createElement(DoubtDisplay, {
+      isActive: isDoubtActive
+    }) : null,
     isDisconnected ? React.createElement(ReconnectButton, { onReconnect: connect }) : null,
     React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { color: currentQuiz ? 'cyan' : isDisconnected ? 'red' : 'yellow' },
+      React.createElement(Text, { color: currentQuiz ? 'cyan' : isDoubtActive ? 'magenta' : isDisconnected ? 'red' : 'yellow' },
         currentQuiz ? 'Type A, B, C, or D to answer the quiz' : 
+        isDoubtActive ? 'Type your doubt and press Enter to submit' :
         isDisconnected ? 'Type "reconnect" to reconnect to educator' :
         'Type your message and press Enter to send'
       )
@@ -441,7 +505,21 @@ function connect() {
           setQuiz(message.data);
           quizHint = null; // Clear previous hint when new quiz arrives
           isGeneratingHint = false; // Clear generating state
+          answerFeedback = null; // Clear previous feedback
+          clearDoubt(); // Clear doubt if active
           addMessage('New quiz received!', 'system');
+        } else if (message.type === 'quiz_feedback') {
+          // Display immediate feedback
+          setAnswerFeedback(message.data);
+        } else if (message.type === 'doubt') {
+          // Display doubt input component
+          if (message.data && message.data.active) {
+            setDoubt(true);
+            clearQuiz(); // Clear quiz if active
+            addMessage('Doubt collection started. Type your doubt and press Enter.', 'system');
+          } else {
+            setDoubt(false);
+          }
         }
       } catch (e) {
         // Legacy: plain text message
@@ -506,6 +584,13 @@ rl.on('line', (line) => {
     }
     
     setGeneratingHint(true);
+    hintsUsedByLearner++;
+    
+    // Notify server about hint request
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'hint_request', data: {} }));
+    }
+    
     generateHint(currentQuiz.question)
       .then(hint => {
         setGeneratingHint(false);
@@ -527,6 +612,34 @@ rl.on('line', (line) => {
   // Handle toggle hint command
   if (inputUpper === 'TOGGLE' && currentQuiz && quizHint) {
     toggleHint();
+    rl.prompt();
+    return;
+  }
+
+  // Handle doubt submission
+  if (isDoubtActive && input) {
+    if (!input.trim()) {
+      addMessage('Please enter a valid doubt', 'system');
+      rl.prompt();
+      return;
+    }
+    
+    // Send doubt to educator
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'doubt_submission',
+        data: {
+          text: input,
+          timestamp: Date.now()
+        }
+      }));
+      
+      addMessage(`Doubt submitted: ${input}`, 'you');
+      clearDoubt(); // Clear doubt after submission
+      addMessage('Doubt submitted successfully!', 'system');
+    } else {
+      addMessage('Not connected to educator', 'system');
+    }
     rl.prompt();
     return;
   }
@@ -553,7 +666,8 @@ rl.on('line', (line) => {
           answerIndex: answerIndex,
           selectedOption: selectedOption,
           timestamp: answerTime,
-          quizStartTime: currentQuiz.startTime || answerTime
+          quizStartTime: currentQuiz.startTime || answerTime,
+          hintsUsed: hintsUsedByLearner
         }
       }));
       
@@ -565,6 +679,9 @@ rl.on('line', (line) => {
   } else if (currentQuiz && inputUpper !== 'A' && inputUpper !== 'B' && inputUpper !== 'C' && inputUpper !== 'D' && inputUpper !== '/HINT' && inputUpper !== 'HINT' && inputUpper !== 'TOGGLE') {
     // User typed something else while quiz is active
     addMessage('Please answer the quiz (A, B, C, or D) or type /hint for a hint', 'system');
+  } else if (isDoubtActive) {
+    // Already handled above, but just in case
+    // This shouldn't be reached
   } else {
     // Regular message
     if (ws && ws.readyState === WebSocket.OPEN) {
