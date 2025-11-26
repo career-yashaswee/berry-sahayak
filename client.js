@@ -164,6 +164,7 @@ function generateHint(question) {
 Provide a Socratic reasoning hint for this question. A Socratic hint should:
 - Guide the learner to think through the problem
 - Ask leading questions rather than giving direct answers
+- IT IS IMPORTANT DO NOT GIVE ANSWER, I REPEAT DO NOT GIVE ANSWER
 - Help them reason through the concepts
 - Be VERY SHORT: Maximum 1-2 lines (20-30 words maximum)
 - Do NOT write paragraphs or long explanations
