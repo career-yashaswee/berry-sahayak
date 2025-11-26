@@ -942,17 +942,10 @@ wss.on('connection', (ws) => {
         
         // Update statistics display
         updateStatisticsDisplay();
-      } else if (data.type === 'hint_request') {
-        // Track hint usage
-        if (quizStatistics && currentQuiz) {
-          quizStatistics.hintsUsed = (quizStatistics.hintsUsed || 0) + 1;
-          updateStatisticsDisplay();
-        }
         
-        // Send feedback to learner
+        // Send feedback to learner immediately
         const correctOption = String.fromCharCode(65 + currentQuiz.correct); // A, B, C, or D
         const correctText = currentQuiz.options[currentQuiz.correct];
-        const isCorrect = answer.answerIndex === currentQuiz.correct;
         
         ws.send(JSON.stringify({
           type: 'quiz_feedback',
@@ -966,6 +959,12 @@ wss.on('connection', (ws) => {
         
         // Show message on educator side
         addMessage(`Quiz Answer: ${answer.answer}. ${answer.selectedOption} - ${isCorrect ? 'CORRECT' : 'WRONG'}`, 'learner');
+      } else if (data.type === 'hint_request') {
+        // Track hint usage
+        if (quizStatistics && currentQuiz) {
+          quizStatistics.hintsUsed = (quizStatistics.hintsUsed || 0) + 1;
+          updateStatisticsDisplay();
+        }
       }
     } catch (e) {
       const text = message.toString();

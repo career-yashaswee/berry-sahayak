@@ -165,9 +165,10 @@ Provide a Socratic reasoning hint for this question. A Socratic hint should:
 - Guide the learner to think through the problem
 - Ask leading questions rather than giving direct answers
 - Help them reason through the concepts
-- Be concise (2-3 sentences)
+- Be VERY SHORT: Maximum 1-2 lines (20-30 words maximum)
+- Do NOT write paragraphs or long explanations
 
-Provide only the hint, no additional explanation.`;
+CRITICAL: Keep it extremely brief - just one or two short sentences. Provide only the hint, no additional explanation.`;
 
     // Try API first
     const postData = JSON.stringify({
@@ -195,8 +196,18 @@ Provide only the hint, no additional explanation.`;
       res.on('end', () => {
         try {
           const response = JSON.parse(data);
-          const hint = response.response || 'Think about the key concepts in the question.';
-          resolve(hint.trim());
+          let hint = response.response || 'Think about the key concepts in the question.';
+          hint = hint.trim();
+          // Truncate to 2 lines maximum (approximately 150 characters)
+          const lines = hint.split('\n');
+          if (lines.length > 2) {
+            hint = lines.slice(0, 2).join(' ').trim();
+          }
+          // Limit to 150 characters max
+          if (hint.length > 150) {
+            hint = hint.substring(0, 147) + '...';
+          }
+          resolve(hint);
         } catch (error) {
           tryCommandLineHint(prompt, resolve, reject);
         }
@@ -219,7 +230,17 @@ function tryCommandLineHint(prompt, resolve, reject) {
       resolve('Think about the key concepts in the question.');
       return;
     }
-    resolve(stdout.trim() || 'Think about the key concepts in the question.');
+    let hint = stdout.trim() || 'Think about the key concepts in the question.';
+    // Truncate to 2 lines maximum (approximately 150 characters)
+    const lines = hint.split('\n');
+    if (lines.length > 2) {
+      hint = lines.slice(0, 2).join(' ').trim();
+    }
+    // Limit to 150 characters max
+    if (hint.length > 150) {
+      hint = hint.substring(0, 147) + '...';
+    }
+    resolve(hint);
   });
 }
 
@@ -292,14 +313,14 @@ function QuizDisplay({ quiz, hint, isGenerating, hintExpanded, onToggleHint, fee
       paddingX: 1,
       paddingY: 0.5,
       backgroundColor: feedback.correct ? 'green' : 'red',
-      borderStyle: 'single',
+      borderStyle: 'round',
       borderColor: feedback.correct ? 'green' : 'red'
     },
       React.createElement(Text, { color: 'white', bold: true },
-        feedback.correct ? '✓ Correct!' : '✗ Incorrect'
+        feedback.correct ? '✓ CORRECT!' : '✗ INCORRECT'
       ),
       React.createElement(Box, { marginTop: 0.5 },
-        React.createElement(Text, { color: 'white' },
+        React.createElement(Text, { color: 'white', bold: true },
           feedback.message
         )
       )
@@ -435,7 +456,7 @@ function App() {
             width: '70%',
             alignSelf: isRight ? 'flex-end' : 'flex-start'
           },
-            React.createElement(Text, { color: 'white' },
+            React.createElement(Text, { color: isRight ? 'white' : '#ffffff', bold: !isRight },
               isRight ? msg.text : `Educator: ${msg.text}`
             )
           )

@@ -95,6 +95,8 @@
         .message.educator {
             background: #666;
             margin-right: auto;
+            color: #ffffff;
+            font-weight: bold;
         }
         .message.system {
             background: #ffcc00;
@@ -538,13 +540,23 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: 'tinyllama',
-                    prompt: `Question: "${question}"\n\nProvide a Socratic reasoning hint for this question. A Socratic hint should:\n- Guide the learner to think through the problem\n- Ask leading questions rather than giving direct answers\n- Help them reason through the concepts\n- Be concise (2-3 sentences)\n\nProvide only the hint, no additional explanation.`,
+                    prompt: `Question: "${question}"\n\nProvide a Socratic reasoning hint for this question. A Socratic hint should:\n- Guide the learner to think through the problem\n- Ask leading questions rather than giving direct answers\n- Help them reason through the concepts\n- Be VERY SHORT: Maximum 1-2 lines (20-30 words maximum)\n- Do NOT write paragraphs or long explanations\n\nCRITICAL: Keep it extremely brief - just one or two short sentences. Provide only the hint, no additional explanation.`,
                     stream: false
                 })
             })
             .then(res => res.json())
             .then(data => {
-                quizHint = (data.response || 'Think about the key concepts in the question.').trim();
+                let hint = (data.response || 'Think about the key concepts in the question.').trim();
+                // Truncate to 2 lines maximum (approximately 150 characters)
+                const lines = hint.split('\n');
+                if (lines.length > 2) {
+                    hint = lines.slice(0, 2).join(' ').trim();
+                }
+                // Limit to 150 characters max
+                if (hint.length > 150) {
+                    hint = hint.substring(0, 147) + '...';
+                }
+                quizHint = hint;
                 hintExpanded = true;
                 const hintContent = document.getElementById('hintContent');
                 const hintHeader = document.querySelector('.hint-header');
