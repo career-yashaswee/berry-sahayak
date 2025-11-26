@@ -474,9 +474,51 @@ function StatisticsComponent({ stats, onClose }) {
 }
 
 // Top Doubts Component
-function TopDoubtsComponent({ doubts, onClose, isProcessing, spinnerIndex }) {
+function TopDoubtsComponent({ doubts, onClose, isProcessing, spinnerIndex, isCollecting, doubtCount }) {
+  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  
+  // Show collection status
+  if (isCollecting && !isProcessing) {
+    return React.createElement(Box, {
+      marginY: 1,
+      borderStyle: 'round',
+      borderColor: 'magenta',
+      paddingX: 1,
+      paddingY: 1,
+      backgroundColor: 'black'
+    },
+      React.createElement(Box, {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 1
+      },
+        React.createElement(Text, { color: 'magenta', bold: true },
+          'COLLECTING DOUBTS'
+        ),
+        React.createElement(Text, { color: 'yellow' },
+          'Type "close doubts" to close'
+        )
+      ),
+      React.createElement(Box, { marginY: 1 },
+        React.createElement(Text, { color: 'cyan' },
+          `${spinnerFrames[spinnerIndex || 0]} Waiting for learner submissions...`
+        )
+      ),
+      React.createElement(Box, { marginY: 0.5 },
+        React.createElement(Text, { color: 'white' },
+          `Doubts collected: ${doubtCount || 0}`
+        )
+      ),
+      React.createElement(Box, { marginY: 0.5 },
+        React.createElement(Text, { color: 'yellow' },
+          'Type /process to process doubts immediately'
+        )
+      )
+    );
+  }
+  
+  // Show processing status
   if (isProcessing) {
-    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     return React.createElement(Box, {
       marginY: 1,
       borderStyle: 'round',
@@ -601,13 +643,13 @@ function App() {
   }, [isGeneratingQuiz]);
 
   React.useEffect(() => {
-    if (isProcessingDoubts) {
+    if (isProcessingDoubts || isDoubtActive) {
       const interval = setInterval(() => {
         setDoubtSpinnerIndex(prev => (prev + 1) % spinnerFrames.length);
       }, 100);
       return () => clearInterval(interval);
     }
-  }, [isProcessingDoubts]);
+  }, [isProcessingDoubts, isDoubtActive]);
 
   return React.createElement(Box, { flexDirection: 'column' },
     React.createElement(Box, { backgroundColor: 'blue', paddingX: 1, paddingY: 0 },
@@ -663,15 +705,17 @@ function App() {
       stats: stats,
       onClose: closeStatistics
     }) : null,
-    showTopDoubts ? React.createElement(TopDoubtsComponent, {
+    (showTopDoubts || (isDoubtActive && !isProcessingDoubts)) ? React.createElement(TopDoubtsComponent, {
       doubts: topDoubts,
       onClose: closeTopDoubts,
       isProcessing: isProcessingDoubts,
-      spinnerIndex: doubtSpinnerIndex
+      spinnerIndex: doubtSpinnerIndex,
+      isCollecting: isDoubtActive && !isProcessingDoubts,
+      doubtCount: doubtCollection.length
     }) : null,
     React.createElement(Box, { marginTop: 1 },
       React.createElement(Text, { color: 'yellow' },
-        'Send message | Press Enter to Send | Type /quiz [topic] for quiz | Type /doubt to collect doubts | Type "close stats" to close statistics | Type "close doubts" to close doubts'
+        'Send message | Press Enter to Send | Type /quiz [topic] for quiz | Type /doubt to collect doubts | Type /process to process doubts | Type "close stats" to close statistics | Type "close doubts" to close doubts'
       )
     )
   );
@@ -703,6 +747,32 @@ rl.on('line', async (line) => {
       return;
     }
     
+    // Check if it's a /process command
+    if (message.toLowerCase() === '/process' || message.toLowerCase().startsWith('/process ')) {
+      if (!isDoubtActive) {
+        addMessage('No active doubt collection. Use /doubt to start collecting doubts first.', 'system');
+        rl.prompt();
+        return;
+      }
+      
+      if (doubtCollection.length === 0) {
+        addMessage('No doubts collected yet. Waiting for learner submissions...', 'system');
+        rl.prompt();
+        return;
+      }
+      
+      // Clear timeout and process immediately
+      if (doubtCollectionTimeout) {
+        clearTimeout(doubtCollectionTimeout);
+        doubtCollectionTimeout = null;
+      }
+      
+      addMessage(`Processing ${doubtCollection.length} doubt(s) immediately...`, 'system');
+      await processAndDisplayDoubts();
+      rl.prompt();
+      return;
+    }
+    
     // Check if it's a /doubt command
     if (message.startsWith('/doubt')) {
       if (!client || client.readyState !== WebSocket.OPEN) {
@@ -715,11 +785,13 @@ rl.on('line', async (line) => {
       isDoubtActive = true;
       doubtCollection = [];
       topDoubts = null;
-      showTopDoubts = false;
+      isProcessingDoubts = false;
+      showTopDoubts = true; // Show component immediately to show collection status
+      updateDoubtsDisplay();
       
       // Send doubt request to learner
       client.send(JSON.stringify({ type: 'doubt', data: { active: true } }));
-      addMessage('Doubt collection started. Waiting for learner submissions...', 'system');
+      addMessage('Doubt collection started. Waiting for learner submissions... Type /process to process immediately.', 'system');
       
       // Set timeout to process doubts after 2 minutes
       if (doubtCollectionTimeout) {
@@ -924,6 +996,8 @@ render(React.createElement(App), {
 async function processAndDisplayDoubts() {
   if (doubtCollection.length === 0) {
     isDoubtActive = false;
+    showTopDoubts = false;
+    updateDoubtsDisplay();
     return;
   }
   
