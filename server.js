@@ -298,38 +298,49 @@ function processDoubts(doubts) {
     }
 
     const doubtsList = doubts.map((d, i) => `${i + 1}. ${d.text}`).join('\n');
-    const prompt = `You are analyzing student doubts from a classroom. Below are the doubts submitted by students:
+    const prompt = `You are analyzing student doubts from a classroom. Below are the EXACT doubts submitted by students:
 
 ${doubtsList}
 
+CRITICAL REQUIREMENTS:
+1. You MUST only use the doubts listed above - DO NOT create random or unrelated doubts
+2. Convert each doubt summary into a QUESTION format (e.g., "What is black hole?" instead of "doubt about black hole")
+3. Group similar doubts together and count how many students have the same concern
+4. Return ONLY the top 3 most critical doubts from the actual submissions above
+
 Your task:
-1. Analyze and understand each doubt
-2. Identify the most critical/common concerns
-3. Summarize and group similar doubts
-4. Return the top 3 most critical doubts that need immediate attention
+1. Analyze and understand each doubt from the list above
+2. Identify the most critical/common concerns from the ACTUAL doubts submitted
+3. Convert each doubt into a clear QUESTION format
+4. Group similar doubts and count occurrences
+5. Return the top 3 most critical doubts as QUESTIONS
 
 Format your response as JSON with this exact structure:
 {
   "topDoubts": [
     {
-      "summary": "Brief summary of the critical doubt",
+      "summary": "What is [topic]?",
       "count": number of students with similar concern,
-      "details": "More detailed explanation"
+      "details": "Original doubt text or similar doubt from the list"
     },
     {
-      "summary": "Second critical doubt",
+      "summary": "How does [concept] work?",
       "count": number,
-      "details": "Details"
+      "details": "Original doubt text or similar doubt from the list"
     },
     {
-      "summary": "Third critical doubt",
+      "summary": "Why does [phenomenon] happen?",
       "count": number,
-      "details": "Details"
+      "details": "Original doubt text or similar doubt from the list"
     }
   ]
 }
 
-Return ONLY the JSON, no other text. If there are fewer than 3 unique critical doubts, return fewer items.`;
+IMPORTANT: 
+- Each "summary" MUST be a question starting with What/How/Why/When/Where
+- Each "details" MUST reference or be based on the actual doubts from the list above
+- DO NOT invent doubts that are not in the student submissions
+- Return ONLY the JSON, no other text. If there are fewer than 3 unique critical doubts, return fewer items.`;
 
     const postData = JSON.stringify({
       model: OLLAMA_MODELS.EDUCATOR_MODEL,
@@ -392,7 +403,25 @@ function tryCommandLineDoubts(prompt, doubts, resolve, reject) {
       const jsonMatch = stdout.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const result = JSON.parse(jsonMatch[0]);
-        resolve(result.topDoubts || []);
+        const processed = (result.topDoubts || []).map(doubt => {
+          // Ensure summary is in question format
+          let summary = doubt.summary || '';
+          summary = summary.trim();
+          if (!summary.endsWith('?')) {
+            // Convert to question if not already
+            if (!summary.match(/^(what|how|why|when|where|who|which|can|could|should|is|are|do|does|did)/i)) {
+              summary = `What is ${summary}?`;
+            } else {
+              summary = summary + '?';
+            }
+          }
+          return {
+            summary: summary,
+            count: doubt.count || 1,
+            details: doubt.details || doubt.summary || ''
+          };
+        });
+        resolve(processed.length > 0 ? processed : createFallbackDoubts(doubts));
       } else {
         resolve(createFallbackDoubts(doubts));
       }
@@ -405,6 +434,53 @@ function tryCommandLineDoubts(prompt, doubts, resolve, reject) {
 // Create fallback doubts summary
 function createFallbackDoubts(doubts) {
   if (doubts.length === 0) return [];
+  
+  // Convert doubt to question format
+  function toQuestion(text) {
+    text = text.trim();
+    // Remove question mark if already present
+    text = text.replace(/\?+$/, '').trim();
+    
+    // If it's already a question, return as is
+    if (text.match(/^(what|how|why|when|where|who|which|can|could|should|is|are|do|does|did)/i)) {
+      return text + '?';
+    }
+    
+    // Convert statements to questions
+    // Extract key topic/concept
+    const lower = text.toLowerCase();
+    
+    // Pattern: "doubt about X" or "confused about X" -> "What is X?"
+    const aboutMatch = text.match(/(?:doubt|confused|unclear|question).*?(?:about|regarding|on)\s+(.+?)(?:\?|$)/i);
+    if (aboutMatch) {
+      return `What is ${aboutMatch[1].trim()}?`;
+    }
+    
+    // Pattern: "X?" -> "What is X?"
+    if (text.length < 50 && !text.includes(' ')) {
+      return `What is ${text}?`;
+    }
+    
+    // Pattern: "I don't understand X" -> "What is X?"
+    const understandMatch = text.match(/(?:don't|do not|cannot|can't).*?(?:understand|know|get)\s+(.+?)(?:\?|$)/i);
+    if (understandMatch) {
+      return `What is ${understandMatch[1].trim()}?`;
+    }
+    
+    // Default: wrap in "What is...?" format
+    if (text.length < 40) {
+      return `What is ${text}?`;
+    }
+    
+    // For longer text, extract key phrase
+    const words = text.split(/\s+/);
+    if (words.length > 5) {
+      const keyPhrase = words.slice(0, 5).join(' ');
+      return `What is ${keyPhrase}?`;
+    }
+    
+    return `What is ${text}?`;
+  }
   
   // Simple grouping by first few words
   const grouped = {};
@@ -421,7 +497,7 @@ function createFallbackDoubts(doubts) {
     .slice(0, 3);
 
   return sorted.map((item, i) => ({
-    summary: item.text.substring(0, 50) + (item.text.length > 50 ? '...' : ''),
+    summary: toQuestion(item.text),
     count: item.count,
     details: item.text
   }));
