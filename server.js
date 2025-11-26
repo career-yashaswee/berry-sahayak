@@ -154,7 +154,8 @@ function calculateStatistics() {
       totalAnswered: 0,
       averageScore: 0,
       avgResponseTime: 0,
-      hintsUsed: 0
+      hintsUsed: 0,
+      optionCounts: { A: 0, B: 0, C: 0, D: 0 }
     };
   }
 
@@ -164,7 +165,8 @@ function calculateStatistics() {
       totalAnswered: 0,
       averageScore: 0,
       avgResponseTime: 0,
-      hintsUsed: quizStatistics.hintsUsed || 0
+      hintsUsed: quizStatistics.hintsUsed || 0,
+      optionCounts: { A: 0, B: 0, C: 0, D: 0 }
     };
   }
 
@@ -177,11 +179,21 @@ function calculateStatistics() {
     ? responseTimes.reduce((sum, t) => sum + t, 0) / responseTimes.length
     : 0;
 
+  // Calculate option distribution (A, B, C, D)
+  const optionCounts = { A: 0, B: 0, C: 0, D: 0 };
+  answers.forEach(a => {
+    const option = String.fromCharCode(65 + a.answerIndex); // A=0, B=1, C=2, D=3
+    if (optionCounts.hasOwnProperty(option)) {
+      optionCounts[option]++;
+    }
+  });
+
   return {
     totalAnswered,
     averageScore: Math.round(averageScore * 10) / 10,
     avgResponseTime: Math.round(avgResponseTime / 1000 * 10) / 10, // Convert to seconds, round to 1 decimal
-    hintsUsed: quizStatistics.hintsUsed || 0
+    hintsUsed: quizStatistics.hintsUsed || 0,
+    optionCounts: optionCounts
   };
 }
 
@@ -506,6 +518,8 @@ function createFallbackDoubts(doubts) {
 // React App Component
 // Statistics Component
 function StatisticsComponent({ stats, onClose }) {
+  const optionCounts = stats.optionCounts || { A: 0, B: 0, C: 0, D: 0 };
+
   return React.createElement(Box, {
     marginY: 1,
     borderStyle: 'round',
@@ -517,7 +531,7 @@ function StatisticsComponent({ stats, onClose }) {
     React.createElement(Box, {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginBottom: 1
+      marginBottom: 2
     },
       React.createElement(Text, { color: 'green', bold: true },
         'CLASS STATISTICS'
@@ -526,24 +540,34 @@ function StatisticsComponent({ stats, onClose }) {
         'Type "close stats" to close'
       )
     ),
-    React.createElement(Box, { marginY: 1 },
+    React.createElement(Box, { marginBottom: 2 },
       React.createElement(Text, { color: 'cyan', bold: true },
         `Total Students Answered: ${stats.totalAnswered}`
       )
     ),
-    React.createElement(Box, { marginY: 1 },
+    React.createElement(Box, { marginBottom: 2 },
       React.createElement(Text, { color: 'cyan', bold: true },
         `Class Average: ${stats.averageScore}%`
       )
     ),
-    React.createElement(Box, { marginY: 1 },
+    React.createElement(Box, { marginBottom: 2 },
       React.createElement(Text, { color: 'cyan', bold: true },
         `Average Response Time: ${stats.avgResponseTime}s`
       )
     ),
-    React.createElement(Box, { marginY: 1 },
+    React.createElement(Box, { marginBottom: 2 },
       React.createElement(Text, { color: 'cyan', bold: true },
         `Hints Used: ${stats.hintsUsed}`
+      )
+    ),
+    React.createElement(Box, { marginTop: 2, marginBottom: 1 },
+      React.createElement(Text, { color: 'yellow', bold: true },
+        'Option Distribution:'
+      )
+    ),
+    React.createElement(Box, { marginBottom: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true },
+        `A: ${optionCounts.A} time${optionCounts.A !== 1 ? 's' : ''} | B: ${optionCounts.B} time${optionCounts.B !== 1 ? 's' : ''} | C: ${optionCounts.C} time${optionCounts.C !== 1 ? 's' : ''} | D: ${optionCounts.D} time${optionCounts.D !== 1 ? 's' : ''}`
       )
     )
   );
